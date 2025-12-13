@@ -75,9 +75,9 @@ type MachineConfiguration struct {
 	ImageSourcePath    string
 	FirmwareSourcePath string
 	NvramSourcePath    string
-	CpuCount           int
-	MemoryMB           int
-	DiskGB             int
+	CpuCount           uint32
+	MemorySize         uint64
+	DiskSize           uint64
 	NetworkInterfaces  []NetworkInterface
 	Volumes            []Volume
 }
@@ -86,7 +86,7 @@ type Driver interface {
 	Start() error
 	Stop() error
 	Reboot() error
-	Scale(cpuCount int, memoryMB int, diskGB int) error
+	Scale(cpuCount uint32, memory uint64, disk uint64) error
 	AttachNetworkInterface(net NetworkInterface) error
 	DetachNetworkInterface(id uuid.UUID) error
 	AttachVolume(volume Volume) error
@@ -242,14 +242,12 @@ func (d *driver) ensureRootDisk() error {
 			return fmt.Errorf("converting image: %w", err)
 		}
 
-		diskBytes := uint64(d.config.DiskGB) * 1_000_000_000
-
 		var diskKiB uint64
 
-		if diskBytes%4096 != 0 {
-			diskKiB = ((diskBytes / 4096) + 1) * 4
+		if d.config.DiskSize%4096 != 0 {
+			diskKiB = ((d.config.DiskSize / 4096) + 1) * 4
 		} else {
-			diskKiB = diskBytes / 1024
+			diskKiB = d.config.DiskSize / 1024
 		}
 
 		cmd = exec.Command("qemu-img", "resize", dstPath, fmt.Sprintf("%dK", diskKiB))
@@ -287,8 +285,15 @@ func (d *driver) Start() error {
 
 	desc := machine.Description{}
 
-	desc.Cpu(1, d.config.CpuCount, d.config.CpuCount)
-	desc.Memory(d.config.MemoryMB, 64*1024)
+	desc.Cpu(1, int(d.config.CpuCount), int(d.config.CpuCount))
+
+	memoryMiB := int(d.config.MemorySize / 1024 / 1024)
+
+	if d.config.MemorySize%(1024*1024) != 0 {
+		memoryMiB += 1
+	}
+
+	desc.Memory(memoryMiB, 64*1024) // TODO: configurable max size
 
 	desc.Monitor(d.filePath(QemuQmpSocketFileName))
 
@@ -305,7 +310,7 @@ func (d *driver) Start() error {
 	for _, networkInterface := range d.config.NetworkInterfaces {
 		switch n := networkInterface.(type) {
 		case TapNetworkInterface:
-			desc.Pcie().AddDevice(pcie.NewTapNetworkDevice("tap-"+n.Id.String(), n.Name, d.config.CpuCount))
+			desc.Pcie().AddDevice(pcie.NewTapNetworkDevice("tap-"+n.Id.String(), n.Name, int(d.config.CpuCount)))
 		case PhysicalNetworkInterface:
 			desc.Pcie().AddDevice(pcie.NewPhysicalNetworkDevice("phys-"+n.Id.String(), n.Name))
 		}
@@ -453,7 +458,7 @@ func (d *driver) Reboot() error {
 	panic("implement me")
 }
 
-func (d *driver) Scale(cpuCount int, memoryMB int, diskGB int) error {
+func (d *driver) Scale(cpuCount uint32, memory uint64, disk uint64) error {
 	//TODO implement me
 	panic("implement me")
 }
