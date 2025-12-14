@@ -3,7 +3,6 @@ package driver
 import (
 	"errors"
 	"fmt"
-	"net"
 	"os"
 	"os/exec"
 	"path"
@@ -35,68 +34,15 @@ const (
 	QemuStdOutFileName    = "stdout.log"
 	FirmwareFileName      = "firmware.fd"
 	NvramFileName         = "nvram.fd"
-)
-
-type NetworkInterface interface {
-	__networkInterfaceMarker()
-}
-
-type NetworkInterfaceBase struct {
-	Id         uuid.UUID
-	MacAddress net.HardwareAddr
-}
-
-func (PhysicalNetworkInterface) __networkInterfaceMarker() {}
-func (TapNetworkInterface) __networkInterfaceMarker()      {}
-
-type PhysicalNetworkInterface struct {
-	NetworkInterfaceBase
-	Name string
-}
-
-type TapNetworkInterface struct {
-	NetworkInterfaceBase
-	Name string
-}
-
-type Volume interface {
-	__volumeMarker()
-}
-
-func (CephVolume) __volumeMarker() {}
-
-type CephVolume struct {
-	Id uuid.UUID
-}
-
-type MachineConfiguration struct {
-	Id                 uuid.UUID
-	StoragePath        string
-	ImageSourcePath    string
-	FirmwareSourcePath string
-	NvramSourcePath    string
-	CpuCount           uint32
-	MemorySize         uint64
-	DiskSize           uint64
-	NetworkInterfaces  []NetworkInterface
-	Volumes            []Volume
-}
-
-type State string
-
-const (
-	Starting   State = "starting"
-	Stopping   State = "stopping"
-	Restarting State = "restarting"
-	Running    State = "running"
-	Stopped    State = "stopped"
+	CreatedFlagFileName   = "created"
 )
 
 type Driver interface {
+	Create() error
 	Start() error
 	Stop() error
 	Reboot() error
-	GetState() State
+	GetState() Status
 	Scale(cpuCount uint32, memory uint64, disk uint64) error
 	AttachNetworkInterface(net NetworkInterface) error
 	DetachNetworkInterface(id uuid.UUID) error
@@ -105,9 +51,9 @@ type Driver interface {
 }
 
 type driver struct {
+	config    MachineConfiguration
 	mu        sync.Mutex
 	qemuPidFd int
-	config    MachineConfiguration
 	mon       qmp.Monitor
 }
 
@@ -174,7 +120,10 @@ func New(config MachineConfiguration) (Driver, error) {
 	}
 
 	d.qemuPidFd = pidfd
-	d.startWatcher()
+	err = d.startWatcher()
+	if err != nil {
+		return nil, fmt.Errorf("creating qemu process watcher: %w", err)
+	}
 
 	return d, nil
 }
@@ -239,33 +188,65 @@ func (d *driver) copyIfNotExists(srcPath string, dstFileName string) error {
 	return nil
 }
 
-func (d *driver) ensureRootDisk() error {
-	dstPath := d.filePath(RootDiskFileName)
-	exists, err := util.FileExists(dstPath)
-	if err != nil {
-		return fmt.Errorf("stat on %s: %w", dstPath, err)
+// Create copies over the rootdisk from the image specified in the configuration, as well as the firmware and nvram files
+// This operation effectively destroys any existing root disk and resets the nvram.
+func (d *driver) Create() error {
+	if d.qemuPidFd != -1 {
+		return fmt.Errorf("VM is running")
 	}
 
-	if !exists {
-		cmd := exec.Command("qemu-img", "convert", "-f", "qcow2", "-O", "raw", d.config.ImageSourcePath, dstPath)
-		err = cmd.Run()
-		if err != nil {
-			return fmt.Errorf("converting image: %w", err)
-		}
+	rootDiskPath := d.filePath(RootDiskFileName)
+	err := util.RemoveIfExists(rootDiskPath)
+	if err != nil {
+		return fmt.Errorf("deleting existing root disk: %w", err)
+	}
 
-		var diskKiB uint64
+	cmd := exec.Command("qemu-img", "convert", "-f", "qcow2", "-O", "raw", d.config.ImageSourcePath, rootDiskPath)
+	err = cmd.Run()
+	if err != nil {
+		return fmt.Errorf("converting image: %w", err)
+	}
 
-		if d.config.DiskSize%4096 != 0 {
-			diskKiB = ((d.config.DiskSize / 4096) + 1) * 4
-		} else {
-			diskKiB = d.config.DiskSize / 1024
-		}
+	var diskKiB uint64
 
-		cmd = exec.Command("qemu-img", "resize", dstPath, fmt.Sprintf("%dK", diskKiB))
-		err = cmd.Run()
-		if err != nil {
-			return fmt.Errorf("resizing image: %w", err)
-		}
+	if d.config.DiskSize%4096 != 0 {
+		diskKiB = ((d.config.DiskSize / 4096) + 1) * 4
+	} else {
+		diskKiB = d.config.DiskSize / 1024
+	}
+
+	cmd = exec.Command("qemu-img", "resize", rootDiskPath, fmt.Sprintf("%dK", diskKiB))
+	err = cmd.Run()
+	if err != nil {
+		return fmt.Errorf("resizing image: %w", err)
+	}
+
+	firmwarePath := d.filePath(FirmwareFileName)
+	err = util.RemoveIfExists(firmwarePath)
+	if err != nil {
+		return fmt.Errorf("deleting existing firmware file: %w", err)
+	}
+
+	err = util.CopyFile(d.config.FirmwareSourcePath, firmwarePath)
+	if err != nil {
+		return fmt.Errorf("copying firmware file: %w", err)
+	}
+
+	nvramPath := d.filePath(NvramFileName)
+	err = util.RemoveIfExists(nvramPath)
+
+	if err != nil {
+		return fmt.Errorf("deleting existing nvram file: %w", err)
+	}
+
+	err = util.CopyFile(d.config.NvramSourcePath, nvramPath)
+	if err != nil {
+		return fmt.Errorf("copying firmware file: %w", err)
+	}
+
+	err = os.WriteFile(d.filePath(CreatedFlagFileName), make([]byte, 0), 0o644)
+	if err != nil {
+		return fmt.Errorf("creating flag file: %w", err)
 	}
 
 	return nil
@@ -279,19 +260,15 @@ func (d *driver) Start() error {
 		return fmt.Errorf("VM is already running")
 	}
 
-	err := d.ensureRootDisk()
+	configFilePath := d.filePath(ConfigFileName)
+	err := util.RemoveIfExists(configFilePath)
 	if err != nil {
-		return fmt.Errorf("ensuring root disk: %w", err)
+		return fmt.Errorf("removing old config file: %w", err)
 	}
 
-	err = d.copyIfNotExists(d.config.FirmwareSourcePath, FirmwareFileName)
+	err = util.RemoveIfExists(d.filePath(QemuQmpSocketFileName))
 	if err != nil {
-		return fmt.Errorf("ensuring firmware file: %w", err)
-	}
-
-	err = d.copyIfNotExists(d.config.NvramSourcePath, NvramFileName)
-	if err != nil {
-		return fmt.Errorf("ensuring nvram file: %w", err)
+		return fmt.Errorf("removing old qmp socket: %w", err)
 	}
 
 	desc := machine.Description{}
@@ -335,8 +312,6 @@ func (d *driver) Start() error {
 	desc.AddChardev(chardev.NewStdio("console", true)) // TODO: actually want a ringbuf here, but this is easier for debugging
 
 	config, hotplugDevices := desc.BuildConfig()
-
-	configFilePath := d.filePath(ConfigFileName)
 
 	err = os.WriteFile(configFilePath, []byte(config.ToString()), 0o644)
 	if err != nil {
@@ -391,7 +366,10 @@ func (d *driver) Start() error {
 	}
 
 	d.qemuPidFd = pidfd
-	d.startWatcher()
+	err = d.startWatcher()
+	if err != nil {
+		return fmt.Errorf("starting qemu process watcher: %w", err)
+	}
 
 	_, err = d.connectMonitor()
 	if err != nil {
@@ -494,12 +472,21 @@ func (d *driver) DetachVolume(id uuid.UUID) error {
 	panic("implement me")
 }
 
-func (d *driver) GetState() State {
-	// TODO: proper state logic
+func (d *driver) GetState() Status {
+	// TODO: proper state logic for starting, stopping and restarting states
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if d.qemuPidFd == -1 {
-		return Stopped
+		isCreated, err := util.FileExists(d.filePath(CreatedFlagFileName))
+		if err != nil {
+			fmt.Printf("failed to check creation flag existence: %v", err)
+			return Unknown
+		}
+		if isCreated {
+			return Stopped
+		} else {
+			return Uninitialized
+		}
 	} else {
 		return Running
 	}
