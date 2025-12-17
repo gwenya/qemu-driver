@@ -160,6 +160,13 @@ func (d *driver) startWatcher() error {
 
 		d.mu.Lock()
 		d.qemuPidFd = -1
+		if d.mon != nil {
+			err := d.mon.Disconnect()
+			if err != nil {
+				fmt.Printf("warning: closing qmp socket failed: %v\n", err)
+			}
+			d.mon = nil
+		}
 		d.signalExit()
 		defer d.mu.Unlock()
 	}()
@@ -438,6 +445,8 @@ func (d *driver) filePath(name string) string {
 }
 
 func (d *driver) Stop() error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	mon, err := d.connectMonitor()
 	if err != nil {
 		return err
@@ -447,6 +456,13 @@ func (d *driver) Stop() error {
 	if err != nil {
 		return fmt.Errorf("stopping VM: %w", err)
 	}
+
+	err = d.mon.Disconnect()
+	if err != nil {
+		fmt.Printf("closing qmp: %w", err)
+	}
+
+	d.mon = nil
 
 	return nil
 }

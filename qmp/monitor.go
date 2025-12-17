@@ -13,6 +13,8 @@ type Monitor interface {
 	AddBlockDevice(blockDev map[string]any) error
 	Continue() error
 	Quit() error
+
+	Disconnect() error
 }
 
 type monitor struct {
@@ -73,4 +75,13 @@ func (m *monitor) Continue() error {
 
 func (m *monitor) Quit() error {
 	return m.runCommand("quit", nil)
+}
+
+func (m *monitor) Disconnect() error {
+	err := m.q.Disconnect()
+	if err != nil {
+		return fmt.Errorf("disconnecting qmp: %w", err)
+	}
+
+	return nil
 }
