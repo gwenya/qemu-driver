@@ -34,7 +34,7 @@ func main() {
 		byte(rand.Int31n(256)),
 	}
 
-	d, err := driver.New(driver.MachineConfiguration{
+	d, err := driver.New("/usr/bin/qemu-system-x86_64", driver.MachineConfiguration{
 		Id:                 id,
 		StoragePath:        storagePath,
 		ImageSourcePath:    imageSource,

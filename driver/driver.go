@@ -34,6 +34,7 @@ const (
 	QemuStdOutFileName    = "stdout.log"
 	FirmwareFileName      = "firmware.fd"
 	NvramFileName         = "nvram.fd"
+	CloudInitIsoFile      = "cloud-init.iso"
 	CreatedFlagFileName   = "created"
 )
 
@@ -52,14 +53,16 @@ type Driver interface {
 
 type driver struct {
 	config    MachineConfiguration
+	qemuPath  string
 	mu        sync.Mutex
 	qemuPidFd int
 	mon       qmp.Monitor
 }
 
-func New(config MachineConfiguration) (Driver, error) {
+func New(qemuPath string, config MachineConfiguration) (Driver, error) {
 	d := &driver{
 		config:    config,
+		qemuPath:  qemuPath,
 		qemuPidFd: -1,
 	}
 
@@ -251,6 +254,15 @@ func (d *driver) Create() error {
 		return fmt.Errorf("copying firmware file: %w", err)
 	}
 
+	fmt.Printf("cloud init: %v", d.config.CloudInit)
+	if (d.config.CloudInit != CloudInitData{}) {
+		fmt.Printf("creating cloud init volume")
+		err := d.config.CloudInit.CreateIso(d.filePath(CloudInitIsoFile))
+		if err != nil {
+			return fmt.Errorf("creating cloud init iso: %w", err)
+		}
+	}
+
 	err = os.WriteFile(d.filePath(CreatedFlagFileName), make([]byte, 0), 0o644)
 	if err != nil {
 		return fmt.Errorf("creating flag file: %w", err)
@@ -301,6 +313,10 @@ func (d *driver) Start() error {
 
 	desc.Scsi().AddDisk(storage.NewImageDrive("rootdisk", d.filePath(RootDiskFileName)))
 
+	if (d.config.CloudInit != CloudInitData{}) {
+		desc.Scsi().AddDisk(storage.NewCdromDrive("cloud-init-cidata", d.filePath(CloudInitIsoFile)))
+	}
+
 	for _, volume := range d.config.Volumes {
 		switch v := volume.(type) {
 		case CephVolume:
@@ -326,14 +342,14 @@ func (d *driver) Start() error {
 		return fmt.Errorf("writing config file: %w", err)
 	}
 
-	builder := cmdBuilder.New("/usr/sbin/qemu-system-x86_64")
+	builder := cmdBuilder.New(d.qemuPath)
 	defer builder.CloseFds()
 
 	builder.AddArgs(
 		"-S",
 		"-uuid", d.config.Id.String(),
-		//"-nographic",
-		"-display", "gtk",
+		"-nographic",
+		//"-display", "gtk",
 		"-nodefaults",
 		"-no-user-config",
 		"-serial", "chardev:console",
@@ -358,8 +374,12 @@ func (d *driver) Start() error {
 	//goland:noinspection GoUnhandledErrorResult
 	defer stderr.Close()
 
-	builder.ConnectStderr(stderr)
-	builder.ConnectStdout(stdout)
+	//builder.ConnectStderr(stderr)
+	//builder.ConnectStdout(stdout)
+
+	builder.ConnectStdin(os.Stdin)
+	builder.ConnectStderr(os.Stderr)
+	builder.ConnectStdout(os.Stdout)
 
 	builder.SetSession(true)
 
