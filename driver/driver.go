@@ -285,6 +285,22 @@ func (d *driver) Start() error {
 		return fmt.Errorf("removing old config file: %w", err)
 	}
 
+	builder := cmdBuilder.New(d.qemuPath)
+	defer builder.CloseFds()
+
+	builder.AddArgs(
+		"-S",
+		"-uuid", d.config.Id.String(),
+		"-nographic",
+		//"-display", "gtk",
+		"-nodefaults",
+		"-no-user-config",
+		"-serial", "chardev:console",
+		"-readconfig", configFilePath,
+		"-machine", "q35",
+		"-pidfile", d.filePath(QemuPidFileName),
+	)
+
 	err = util.RemoveIfExists(d.filePath(QemuQmpSocketFileName))
 	if err != nil {
 		return fmt.Errorf("removing old qmp socket: %w", err)
@@ -335,28 +351,20 @@ func (d *driver) Start() error {
 		}
 	}
 
+	vsockFile, err := openVsock(d.config.VsockCid)
+	if err != nil {
+		return fmt.Errorf("allocating vsock cid %d: %w", d.config.VsockCid, err)
+	}
+
+	vsockFd := builder.AddFd(vsockFile)
+	desc.Pcie().AddDevice(pcie.NewVsock("vsock", d.config.VsockCid, vsockFd))
+
 	config, hotplugDevices := desc.BuildConfig()
 
 	err = os.WriteFile(configFilePath, []byte(config.ToString()), 0o644)
 	if err != nil {
 		return fmt.Errorf("writing config file: %w", err)
 	}
-
-	builder := cmdBuilder.New(d.qemuPath)
-	defer builder.CloseFds()
-
-	builder.AddArgs(
-		"-S",
-		"-uuid", d.config.Id.String(),
-		"-nographic",
-		//"-display", "gtk",
-		"-nodefaults",
-		"-no-user-config",
-		"-serial", "chardev:console",
-		"-readconfig", configFilePath,
-		"-machine", "q35",
-		"-pidfile", d.filePath(QemuPidFileName),
-	)
 
 	stdout, err := os.Create(d.filePath(QemuStdOutFileName))
 	if err != nil {

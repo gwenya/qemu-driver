@@ -21,6 +21,7 @@ type MachineConfiguration struct {
 	DiskSize           uint64
 	NetworkInterfaces  []NetworkInterface
 	Volumes            []Volume
+	VsockCid           uint32
 	CloudInit          CloudInitData
 }
 

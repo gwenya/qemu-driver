@@ -2,7 +2,6 @@ package cmdBuilder
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -23,7 +22,7 @@ type cmdBuilder struct {
 
 type CmdBuilder interface {
 	AddArgs(args ...string)
-	AddFd(file *os.File) string
+	AddFd(file *os.File) int
 	ConnectStdin(stdin io.Reader)
 	ConnectStdout(stdout io.Writer)
 	ConnectStderr(stderr io.Writer)
@@ -45,10 +44,10 @@ func (b *cmdBuilder) AddArgs(args ...string) {
 	b.args = append(b.args, args...)
 }
 
-func (b *cmdBuilder) AddFd(file *os.File) string {
-	fdPath := fmt.Sprintf("dev/fd/%d", 3+len(b.fds))
+func (b *cmdBuilder) AddFd(file *os.File) int {
+	fd := 3 + len(b.fds)
 	b.fds = append(b.fds, file)
-	return fdPath
+	return fd
 }
 
 func (b *cmdBuilder) ConnectStdin(stdin io.Reader) {

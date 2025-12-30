@@ -46,7 +46,8 @@ func main() {
 		NetworkInterfaces: []driver.NetworkInterface{
 			driver.NewTapNetworkInterface("test-tap", hwaddr),
 		},
-		Volumes: nil,
+		Volumes:  nil,
+		VsockCid: 3,
 	})
 
 	if err != nil {
