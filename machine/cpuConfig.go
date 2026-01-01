@@ -2,6 +2,7 @@ package machine
 
 import (
 	"fmt"
+
 	"github.com/gwenya/qemu-driver/config"
 )
 

@@ -2,6 +2,7 @@ package serial
 
 import (
 	"fmt"
+
 	"github.com/gwenya/qemu-driver/config"
 )
 

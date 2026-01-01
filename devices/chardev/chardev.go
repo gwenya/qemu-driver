@@ -2,8 +2,9 @@ package chardev
 
 import (
 	"fmt"
-	"github.com/gwenya/qemu-driver/config"
 	"maps"
+
+	"github.com/gwenya/qemu-driver/config"
 )
 
 type Chardev interface {
