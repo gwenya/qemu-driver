@@ -9,7 +9,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// from linux/vhost.h
+// VHOST_VSOCK_SET_GUEST_CID is from linux/vhost.h
 const VHOST_VSOCK_SET_GUEST_CID = 0x4008AF60
 
 func openVsock(cid uint32) (retF *os.File, retErr error) {
