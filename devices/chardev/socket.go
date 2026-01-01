@@ -2,6 +2,7 @@ package chardev
 
 import (
 	"fmt"
+
 	"github.com/gwenya/qemu-driver/config"
 	"github.com/gwenya/qemu-driver/util"
 )
