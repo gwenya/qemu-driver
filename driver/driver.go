@@ -537,30 +537,32 @@ func (d *driver) GetState() Status {
 	// TODO: proper state logic for starting, stopping and restarting states
 	d.mu.Lock()
 	defer d.mu.Unlock()
+
 	if d.qemuPidFd == -1 {
 		isCreated, err := util.FileExists(d.filePath(CreatedFlagFileName))
 		if err != nil {
 			fmt.Printf("failed to check creation flag existence: %v\n", err)
 			return Unknown
 		}
+
 		if isCreated {
 			return Stopped
-		} else {
-			return Uninitialized
-		}
-	} else {
-		mon, err := d.connectMonitor()
-		if err != nil {
-			fmt.Printf("failed to connect qmp monitor: %v\n", err)
-			return Unknown
 		}
 
-		qemuStatus, err := mon.Status()
-		if err != nil {
-			fmt.Printf("failed to query qemu status: %v\n", err)
-			return Unknown
-		}
-
-		return mapQemuStatus(qemuStatus)
+		return Uninitialized
 	}
+
+	mon, err := d.connectMonitor()
+	if err != nil {
+		fmt.Printf("failed to connect qmp monitor: %v\n", err)
+		return Unknown
+	}
+
+	qemuStatus, err := mon.Status()
+	if err != nil {
+		fmt.Printf("failed to query qemu status: %v\n", err)
+		return Unknown
+	}
+
+	return mapQemuStatus(qemuStatus)
 }
