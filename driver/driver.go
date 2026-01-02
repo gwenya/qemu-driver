@@ -545,11 +545,11 @@ func (d *driver) GetState() Status {
 			return Unknown
 		}
 
-		if isCreated {
-			return Stopped
+		if !isCreated {
+			return Uninitialized
 		}
 
-		return Uninitialized
+		return Stopped
 	}
 
 	mon, err := d.connectMonitor()
