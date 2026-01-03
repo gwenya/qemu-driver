@@ -28,6 +28,7 @@ import (
 const (
 	QemuPidFileName       = "qemu.pid"
 	QemuQmpSocketFileName = "qmp.sock"
+	ConsoleSocketFileName = "console.sock"
 	RootDiskFileName      = "rootdisk.img"
 	ConfigFileName        = "qemu.conf"
 	QemuStdErrFileName    = "stderr.log"
@@ -325,7 +326,16 @@ func (d *driver) Start() error {
 	desc.Pcie().AddDevice(pcie.NewTablet("tablet"))
 	desc.Pcie().AddDevice(pcie.NewVga("vga", pcie.StdVga))
 
-	desc.AddChardev(chardev.NewStdio("console", true)) // TODO: actually want a ringbuf here, but this is easier for debugging
+	desc.AddChardev(chardev.NewRingbuf("console-ringbuf", 4096))
+	desc.AddChardev(chardev.NewSocket("console-socket", chardev.SocketOpts{
+		Unix: chardev.SocketOptsUnix{
+			Path: d.filePath(ConsoleSocketFileName),
+		},
+		Server: true,
+		Wait:   false,
+	}))
+
+	desc.AddChardev(chardev.NewHub("console", "console-ringbuf", "console-socket"))
 
 	desc.Scsi().AddDisk(storage.NewImageDrive("rootdisk", d.filePath(RootDiskFileName)))
 
@@ -384,12 +394,8 @@ func (d *driver) Start() error {
 	//goland:noinspection GoUnhandledErrorResult
 	defer stderr.Close()
 
-	//builder.ConnectStderr(stderr)
-	//builder.ConnectStdout(stdout)
-
-	//builder.ConnectStdin(os.Stdin)
-	builder.ConnectStderr(os.Stderr)
-	builder.ConnectStdout(os.Stdout)
+	builder.ConnectStderr(stderr)
+	builder.ConnectStdout(stdout)
 
 	builder.SetSession(true)
 
