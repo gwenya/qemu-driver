@@ -51,7 +51,7 @@ func (d *imageDrive) GetScsiHotplug(bus string) devices.HotplugDevice {
 }
 
 func (d *imageDrive) Plug(m qmp.Monitor, bus string) error {
-	nodeName := "node-" + d.id
+	nodeName := "vol-" + d.id
 	var driver string
 	var readonly bool
 

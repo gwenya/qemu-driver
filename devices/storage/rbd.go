@@ -31,7 +31,7 @@ func (d *rbdDrive) GetScsiHotplug(bus string) devices.HotplugDevice {
 }
 
 func (d *rbdDrive) Plug(m qmp.Monitor, bus string) error {
-	nodeName := "node-" + d.id
+	nodeName := "vol-" + d.id
 	err := m.AddBlockDevice(map[string]any{
 		"cache": map[string]any{
 			"direct":   false,
