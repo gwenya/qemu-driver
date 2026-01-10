@@ -22,7 +22,8 @@ type Monitor interface {
 	QueryMemorySummary() (MemorySummary, error)
 	QueryMemoryDevices() ([]MemoryDevice, error)
 	QueryPCI() ([]PciBus, error)
-	QomList(path string) ([]QomItem, error)
+	QomList(path string) ([]QomInfo, error)
+	QomListGet(paths []string) ([]QomProperties, error)
 	AddMemoryBackend(id string, size uint64) error
 	RemoveMemoryBackend(id string) error
 	SendFd(name string, fd *os.File) error
@@ -231,14 +232,34 @@ func (m *monitor) QueryPCI() ([]PciBus, error) {
 	return resp.Return, nil
 }
 
-type QomItem struct {
+type QomInfo struct {
 	Name string `json:"name"`
 	Type string `json:"type"`
 }
 
-func (m *monitor) QomList(path string) ([]QomItem, error) {
-	var resp Response[[]QomItem]
+type QomProperties struct {
+	Properties []QomValue `json:"properties"`
+}
+
+type QomValue struct {
+	Name  string `json:"name"`
+	Type  string `json:"type"`
+	Value any    `json:"value"`
+}
+
+func (m *monitor) QomList(path string) ([]QomInfo, error) {
+	var resp Response[[]QomInfo]
 	err := m.runCommandsWithResponse("qom-list", map[string]any{"path": path}, &resp)
+	if err != nil {
+		return nil, err
+	}
+
+	return resp.Return, nil
+}
+
+func (m *monitor) QomListGet(paths []string) ([]QomProperties, error) {
+	var resp Response[[]QomProperties]
+	err := m.runCommandsWithResponse("qom-list-get", map[string]any{"paths": paths}, &resp)
 	if err != nil {
 		return nil, err
 	}

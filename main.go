@@ -2,8 +2,6 @@ package main
 
 import (
 	"fmt"
-	"math/rand"
-	"net"
 	"os"
 	"path"
 
@@ -32,14 +30,14 @@ func main() {
 		panic(err)
 	}
 
-	hwaddr := net.HardwareAddr{
-		(byte(rand.Int31n(256)) & ^byte(0b1)) | byte(0b10),
-		byte(rand.Int31n(256)),
-		byte(rand.Int31n(256)),
-		byte(rand.Int31n(256)),
-		byte(rand.Int31n(256)),
-		byte(rand.Int31n(256)),
-	}
+	//hwaddr := net.HardwareAddr{
+	//	(byte(rand.Int31n(256)) & ^byte(0b1)) | byte(0b10),
+	//	byte(rand.Int31n(256)),
+	//	byte(rand.Int31n(256)),
+	//	byte(rand.Int31n(256)),
+	//	byte(rand.Int31n(256)),
+	//	byte(rand.Int31n(256)),
+	//}
 
 	userData := `#cloud-config
 users:
@@ -92,13 +90,7 @@ runcmd:
 				Meta: fmt.Sprintf("instance-id: %s", id),
 				User: userData,
 			},
-			Volumes: []driver.Volume{
-				driver.NewCephVolume(
-					driver.DiskId("sample-volume"),
-					"dev",
-					"33333333-549a-42d3-87c9-090451088b24",
-				),
-			},
+			Volumes:         []driver.Volume{},
 			NetworkAdapters: []driver.NetworkAdapter{},
 			VsockCid:        3,
 		})
@@ -107,7 +99,11 @@ runcmd:
 		}
 
 	} else {
-		err := d.AttachNetworkAdapter(driver.NewTapNetworkAdapter("test-tap", hwaddr))
+		err := d.AttachVolume(driver.NewCephVolume(
+			driver.DiskId("sample-volume"),
+			"dev",
+			"33333333-549a-42d3-87c9-090451088b24",
+		))
 		if err != nil {
 			panic(err)
 		}

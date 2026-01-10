@@ -15,6 +15,7 @@ type rbdDrive struct {
 }
 
 func NewRbdDrive(serial string, pool string, name string) RbdDrive {
+	// TODO: take vendor/product/serial triplet instead of just serial
 	return &rbdDrive{
 		serial: serial,
 		pool:   pool,

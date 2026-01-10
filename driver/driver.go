@@ -944,21 +944,91 @@ func (d *driver) AttachNetworkAdapter(adapter NetworkAdapter) error {
 }
 
 func (d *driver) DetachNetworkAdapter(name string) error {
-	//TODO implement me
-	panic("implement me")
+	return newRestartRequiredErr("network adapter detach is not supported")
 }
 
 func (d *driver) GetVolumeIdentifiers() ([]DiskIdentifier, error) {
-	//TODO implement me
-	panic("implement me")
+	mon, err := d.connectMonitor()
+	if err != nil {
+		return nil, err
+	}
+
+	qom, err := mon.QomList("/machine/peripheral")
+	if err != nil {
+		return nil, err
+	}
+
+	var paths []string
+
+	for _, item := range qom {
+		if item.Type == "child<scsi-hd>" || item.Type == "child<scsi-cd>" {
+			paths = append(paths, "/machine/peripheral/"+item.Name)
+		}
+	}
+
+	if len(paths) == 0 {
+		return nil, nil
+	}
+
+	volumes, err := mon.QomListGet(paths)
+	if err != nil {
+		return nil, err
+	}
+
+	var volumeIds []DiskIdentifier
+
+	for _, volume := range volumes {
+		var vendor, product, serial string
+		var ok bool
+
+		for _, property := range volume.Properties {
+			if property.Name == "vendor" {
+				vendor, ok = property.Value.(string)
+				if !ok {
+					return nil, fmt.Errorf("unexpected response from qemu, expected string, got %v", property.Value)
+				}
+			} else if property.Name == "product" {
+				product, ok = property.Value.(string)
+				if !ok {
+					return nil, fmt.Errorf("unexpected response from qemu, expected string, got %v", property.Value)
+				}
+			} else if property.Name == "serial" {
+				serial, ok = property.Value.(string)
+				if !ok {
+					return nil, fmt.Errorf("unexpected response from qemu, expected string, got %v", property.Value)
+				}
+			}
+		}
+
+		volumeIds = append(volumeIds, DiskIdFull(vendor, product, serial))
+	}
+
+	return volumeIds, nil
 }
 
 func (d *driver) AttachVolume(volume Volume) error {
-	//TODO implement me
-	panic("implement me")
+	var device storage.ScsiDrive
+	switch opts := volume.options.(type) {
+	case cephVolumeOpts:
+		device = storage.NewRbdDrive(volume.id.Serial, opts.pool, opts.name)
+	default:
+		return errors.New("unsupported volume type")
+	}
+
+	mon, err := d.connectMonitor()
+	if err != nil {
+		return err
+	}
+
+	hotplug := device.GetScsiHotplug("scsi.0") // TODO: feels bad to hardcode this
+	err = hotplug.Plug(mon)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (d *driver) DetachVolume(id DiskIdentifier) error {
-	//TODO implement me
-	panic("implement me")
+	return newRestartRequiredErr("volume detach is not supported")
 }
