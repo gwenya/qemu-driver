@@ -7,12 +7,16 @@ import (
 	"time"
 
 	"github.com/digitalocean/go-qemu/qmp"
+	"github.com/digitalocean/go-qemu/qmp/raw"
 )
 
 type Monitor interface {
 	AddDevice(device map[string]any) error
+	DeleteDevice(id string) error
 	AddBlockDevice(blockDev map[string]any) error
+	DeleteBlockDevice(nodeName string) error
 	AddNetworkDevice(netDev map[string]any) error
+	DeleteNetworkDevice(id string) error
 	Continue() error
 	Quit() error
 	Disconnect() error
@@ -22,6 +26,8 @@ type Monitor interface {
 	QueryMemorySummary() (MemorySummary, error)
 	QueryMemoryDevices() ([]MemoryDevice, error)
 	QueryPCI() ([]PciBus, error)
+	QueryBlock() ([]raw.BlockInfo, error)
+	QueryNamedBlockNodes() ([]BlockDeviceInfo, error)
 	QomList(path string) ([]QomInfo, error)
 	QomListGet(paths []string) ([]QomProperties, error)
 	AddMemoryBackend(id string, size uint64) error
@@ -94,7 +100,7 @@ func (m *monitor) runCommandWithFd(command string, args map[string]any, fd *os.F
 	return nil
 }
 
-func (m *monitor) runCommandsWithResponse(command string, args map[string]any, resp any) error {
+func (m *monitor) runCommandWithResponse(command string, args map[string]any, resp any) error {
 	cmd, err := serializeCommand(command, args)
 	if err != nil {
 		return err
@@ -121,12 +127,30 @@ func (m *monitor) AddDevice(device map[string]any) error {
 	return m.runCommand("device_add", device)
 }
 
+func (m *monitor) DeleteDevice(id string) error {
+	return m.runCommand("device_del", map[string]any{
+		"id": id,
+	})
+}
+
 func (m *monitor) AddBlockDevice(blockDev map[string]any) error {
 	return m.runCommand("blockdev-add", blockDev)
 }
 
+func (m *monitor) DeleteBlockDevice(nodeName string) error {
+	return m.runCommand("blockdev-del", map[string]any{
+		"node-name": nodeName,
+	})
+}
+
 func (m *monitor) AddNetworkDevice(netDev map[string]any) error {
 	return m.runCommand("netdev_add", netDev)
+}
+
+func (m *monitor) DeleteNetworkDevice(id string) error {
+	return m.runCommand("netdev_del", map[string]any{
+		"id": id,
+	})
 }
 
 func (m *monitor) Continue() error {
@@ -150,7 +174,7 @@ func (m *monitor) Status() (RunState, error) {
 	var resp Response[struct {
 		Status RunState `json:"status"`
 	}]
-	err := m.runCommandsWithResponse("query-status", nil, &resp)
+	err := m.runCommandWithResponse("query-status", nil, &resp)
 	if err != nil {
 		return "", err
 	}
@@ -160,7 +184,7 @@ func (m *monitor) Status() (RunState, error) {
 
 func (m *monitor) QueryCPUs() ([]CpuInfo, error) {
 	var resp Response[[]CpuInfo]
-	err := m.runCommandsWithResponse("query-cpus-fast", nil, &resp)
+	err := m.runCommandWithResponse("query-cpus-fast", nil, &resp)
 	if err != nil {
 		return nil, err
 	}
@@ -170,7 +194,7 @@ func (m *monitor) QueryCPUs() ([]CpuInfo, error) {
 
 func (m *monitor) QueryHotpluggableCPUs() ([]HotpluggableCpu, error) {
 	var resp Response[[]HotpluggableCpu]
-	err := m.runCommandsWithResponse("query-hotpluggable-cpus", nil, &resp)
+	err := m.runCommandWithResponse("query-hotpluggable-cpus", nil, &resp)
 	if err != nil {
 		return nil, err
 	}
@@ -180,7 +204,7 @@ func (m *monitor) QueryHotpluggableCPUs() ([]HotpluggableCpu, error) {
 
 func (m *monitor) QueryMemorySummary() (MemorySummary, error) {
 	var resp Response[MemorySummary]
-	err := m.runCommandsWithResponse("query-memory-size-summary", nil, &resp)
+	err := m.runCommandWithResponse("query-memory-size-summary", nil, &resp)
 	if err != nil {
 		return MemorySummary{}, err
 	}
@@ -190,7 +214,7 @@ func (m *monitor) QueryMemorySummary() (MemorySummary, error) {
 
 func (m *monitor) QueryMemoryDevices() ([]MemoryDevice, error) {
 	var resp Response[[]MemoryDevice]
-	err := m.runCommandsWithResponse("query-memory-devices", nil, &resp)
+	err := m.runCommandWithResponse("query-memory-devices", nil, &resp)
 	if err != nil {
 		return nil, err
 	}
@@ -224,7 +248,25 @@ func (m *monitor) RemoveMemoryBackend(id string) error {
 
 func (m *monitor) QueryPCI() ([]PciBus, error) {
 	var resp Response[[]PciBus]
-	err := m.runCommandsWithResponse("query-pci", nil, &resp)
+	err := m.runCommandWithResponse("query-pci", nil, &resp)
+	if err != nil {
+		return nil, err
+	}
+
+	return resp.Return, nil
+}
+
+func (m *monitor) QueryBlock() ([]raw.BlockInfo, error) {
+	return raw.NewMonitor(m.q).QueryBlock()
+}
+
+type BlockDeviceInfo struct {
+	NodeName string `json:"node-name"`
+}
+
+func (m *monitor) QueryNamedBlockNodes() ([]BlockDeviceInfo, error) {
+	var resp Response[[]BlockDeviceInfo]
+	err := m.runCommandWithResponse("query-named-block-nodes", nil, &resp)
 	if err != nil {
 		return nil, err
 	}
@@ -249,7 +291,7 @@ type QomValue struct {
 
 func (m *monitor) QomList(path string) ([]QomInfo, error) {
 	var resp Response[[]QomInfo]
-	err := m.runCommandsWithResponse("qom-list", map[string]any{"path": path}, &resp)
+	err := m.runCommandWithResponse("qom-list", map[string]any{"path": path}, &resp)
 	if err != nil {
 		return nil, err
 	}
@@ -259,7 +301,7 @@ func (m *monitor) QomList(path string) ([]QomInfo, error) {
 
 func (m *monitor) QomListGet(paths []string) ([]QomProperties, error) {
 	var resp Response[[]QomProperties]
-	err := m.runCommandsWithResponse("qom-list-get", map[string]any{"paths": paths}, &resp)
+	err := m.runCommandWithResponse("qom-list-get", map[string]any{"paths": paths}, &resp)
 	if err != nil {
 		return nil, err
 	}

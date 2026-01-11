@@ -2,6 +2,7 @@ package storage
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/gwenya/qemu-driver/config"
 	"github.com/gwenya/qemu-driver/devices"
@@ -9,17 +10,17 @@ import (
 )
 
 type rbdDrive struct {
-	serial string
-	pool   string
-	name   string
+	id   DiskIdentifier
+	pool string
+	name string
 }
 
-func NewRbdDrive(serial string, pool string, name string) RbdDrive {
+func NewRbdDrive(id DiskIdentifier, pool string, name string) RbdDrive {
 	// TODO: take vendor/product/serial triplet instead of just serial
 	return &rbdDrive{
-		serial: serial,
-		pool:   pool,
-		name:   name,
+		id:   id,
+		pool: pool,
+		name: name,
 	}
 }
 
@@ -32,35 +33,70 @@ func (d *rbdDrive) GetScsiHotplug(bus string) devices.HotplugDevice {
 }
 
 func (d *rbdDrive) Plug(m qmp.Monitor, bus string) error {
-	err := m.AddBlockDevice(map[string]any{
-		"cache": map[string]any{
-			"direct":   false,
-			"no-flush": false,
-		},
-		"discard":   "unmap", // Forward as an unmap request. This is the same as `discard=on` in the qemu config file.
-		"driver":    "rbd",
-		"pool":      d.pool,
-		"image":     d.name,
-		"node-name": d.serial,
-		"read-only": false,
-	})
+	nodeName := d.id.NodeName()
 
+	blocks, err := m.QueryNamedBlockNodes()
 	if err != nil {
-		return fmt.Errorf("adding block device: %w", err)
+		return err
 	}
 
-	err = m.AddDevice(map[string]any{
-		"id":      fmt.Sprintf("scsi-%s", d.serial),
-		"drive":   d.serial,
-		"serial":  d.serial,
-		"channel": 0,
-		"lun":     1,
-		"bus":     bus,
-		"driver":  "scsi-hd",
-	})
+	blockdevExists := false
 
-	if err != nil {
-		return fmt.Errorf("adding device: %w", err)
+	for _, block := range blocks {
+		if block.NodeName != nodeName {
+			continue
+		}
+
+		blockdevExists = true
+		break
+	}
+
+	if !blockdevExists {
+		err := m.AddBlockDevice(map[string]any{
+			"cache": map[string]any{
+				"direct":   false,
+				"no-flush": false,
+			},
+			"discard":   "unmap",
+			"driver":    "rbd",
+			"pool":      d.pool,
+			"image":     d.name,
+			"node-name": d.id.NodeName(),
+			"read-only": false,
+		})
+
+		if err != nil {
+			return fmt.Errorf("adding block device: %w", err)
+		}
+	}
+
+	id := fmt.Sprintf("scsi-%s", d.id.NodeName())
+
+	deviceExists := true
+
+	_, err = m.QomList(fmt.Sprintf("/machine/peripheral/%s", id))
+	if err != nil && strings.Contains(err.Error(), "not found") {
+		deviceExists = false
+	} else if err != nil {
+		return err
+	}
+
+	if !deviceExists {
+		err = m.AddDevice(map[string]any{
+			"id":      id,
+			"drive":   d.id.NodeName(),
+			"vendor":  d.id.Vendor,
+			"product": d.id.Product,
+			"serial":  d.id.Serial,
+			"channel": 0,
+			"lun":     1,
+			"bus":     bus,
+			"driver":  "scsi-hd",
+		})
+
+		if err != nil {
+			return fmt.Errorf("adding device: %w", err)
+		}
 	}
 
 	return nil

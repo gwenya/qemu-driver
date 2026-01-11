@@ -38,6 +38,8 @@ func (d *tapNetworkDevice) GetHotplugs(alloc BusAllocation) []devices.HotplugDev
 }
 
 func (d *tapNetworkDevice) Plug(m qmp.Monitor, alloc BusAllocation) (errRet error) {
+	// TODO: only add the netdev if it doesn't exist yet, and only add the device if it doesn't exist yet
+	// just ignoring the error from netdev add is not enough since at that point the fds for the tap are already allocated and sent to qemu
 	cpus, err := m.QueryCPUs()
 	if err != nil {
 		return fmt.Errorf("getting cpu info from qemu: %w", err)
@@ -111,7 +113,6 @@ func (d *tapNetworkDevice) Plug(m qmp.Monitor, alloc BusAllocation) (errRet erro
 		"fds":      strings.Join(fdNames, ":"),
 		"vhostfds": strings.Join(vhostFdNames, ":"),
 	})
-
 	if err != nil {
 		return fmt.Errorf("adding netdev to qemu: %w", err)
 	}
@@ -164,4 +165,18 @@ func openTap(name string) (f *os.File, retErr error) {
 func (d *tapNetworkDevice) Unplug(m qmp.Monitor, alloc BusAllocation) error {
 	//TODO implement me
 	panic("implement me")
+}
+
+func UnplugTapNetworkDevice(m qmp.Monitor, name string) error {
+	err := m.DeleteDevice("tap-" + name)
+	if err != nil && !strings.Contains(err.Error(), "not found") {
+		return err
+	}
+
+	err = m.DeleteNetworkDevice("tap-" + name + "-netdev")
+	if err != nil && !strings.Contains(err.Error(), "not found") {
+		return err
+	}
+
+	return nil
 }

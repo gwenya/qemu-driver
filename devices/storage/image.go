@@ -16,9 +16,9 @@ const (
 )
 
 type imageDrive struct {
-	serial string
-	path   string
-	typ    imageDriveType
+	id   DiskIdentifier
+	path string
+	typ  imageDriveType
 }
 
 type ImageDrive interface {
@@ -26,19 +26,19 @@ type ImageDrive interface {
 	BlkDrive
 }
 
-func NewImageDrive(serial string, path string) ImageDrive {
+func NewImageDrive(id DiskIdentifier, path string) ImageDrive {
 	return &imageDrive{
-		serial: serial,
-		path:   path,
-		typ:    typeDisk,
+		id:   id,
+		path: path,
+		typ:  typeDisk,
 	}
 }
 
-func NewCdromDrive(serial string, path string) ImageDrive {
+func NewCdromDrive(id DiskIdentifier, path string) ImageDrive {
 	return &imageDrive{
-		serial: serial,
-		path:   path,
-		typ:    typeCdrom,
+		id:   id,
+		path: path,
+		typ:  typeCdrom,
 	}
 }
 
@@ -70,7 +70,7 @@ func (d *imageDrive) Plug(m qmp.Monitor, bus string) error {
 		},
 		"discard":   "unmap", // Forward as an unmap request. This is the same as `discard=on` in the qemu config file.
 		"driver":    "file",
-		"node-name": d.serial,
+		"node-name": d.id.NodeName(),
 		"read-only": readonly,
 		"locking":   "off",
 		"filename":  d.path,
@@ -81,9 +81,11 @@ func (d *imageDrive) Plug(m qmp.Monitor, bus string) error {
 	}
 
 	err = m.AddDevice(map[string]any{
-		"id":      fmt.Sprintf("scsi-%s", d.serial),
-		"drive":   d.serial,
-		"serial":  d.serial,
+		"id":      fmt.Sprintf("scsi-%s", d.id.NodeName()),
+		"drive":   d.id.NodeName(),
+		"vendor":  d.id.Vendor,
+		"product": d.id.Product,
+		"serial":  d.id.Serial,
 		"channel": 0,
 		"lun":     1,
 		"bus":     bus,

@@ -2,8 +2,11 @@ package main
 
 import (
 	"fmt"
+	"math/rand"
+	"net"
 	"os"
 	"path"
+	"slices"
 
 	"github.com/gwenya/qemu-driver/driver"
 
@@ -30,14 +33,14 @@ func main() {
 		panic(err)
 	}
 
-	//hwaddr := net.HardwareAddr{
-	//	(byte(rand.Int31n(256)) & ^byte(0b1)) | byte(0b10),
-	//	byte(rand.Int31n(256)),
-	//	byte(rand.Int31n(256)),
-	//	byte(rand.Int31n(256)),
-	//	byte(rand.Int31n(256)),
-	//	byte(rand.Int31n(256)),
-	//}
+	hwaddr := net.HardwareAddr{
+		(byte(rand.Int31n(256)) & ^byte(0b1)) | byte(0b10),
+		byte(rand.Int31n(256)),
+		byte(rand.Int31n(256)),
+		byte(rand.Int31n(256)),
+		byte(rand.Int31n(256)),
+		byte(rand.Int31n(256)),
+	}
 
 	userData := `#cloud-config
 users:
@@ -99,14 +102,23 @@ runcmd:
 		}
 
 	} else {
-		err := d.AttachVolume(driver.NewCephVolume(
-			driver.DiskId("sample-volume"),
-			"dev",
-			"33333333-549a-42d3-87c9-090451088b24",
-		))
+		names, err := d.GetNetworkAdapterNames()
 		if err != nil {
 			panic(err)
 		}
+
+		if slices.Contains(names, "test-tap") {
+			err := d.DetachNetworkAdapter("test-tap")
+			if err != nil {
+				panic(err)
+			}
+		} else {
+			err := d.AttachNetworkAdapter(driver.NewTapNetworkAdapter("test-tap", hwaddr))
+			if err != nil {
+				panic(err)
+			}
+		}
+
 	}
 
 }

@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/gwenya/qemu-driver/pidfd"
@@ -372,7 +373,7 @@ func (d *driver) Start(opts StartOptions) error {
 
 	desc.AddChardev(chardev.NewHub("console", "console-ringbuf", "console-socket"))
 
-	desc.Scsi().AddDisk(storage.NewImageDrive("rootdisk", d.storagePath(RootDiskFileName)))
+	desc.Scsi().AddDisk(storage.NewImageDrive(diskIdRootdisk().toStorage(), d.storagePath(RootDiskFileName)))
 
 	if (opts.CloudInit != CloudInit{}) {
 		err := d.generateCloudInitIso(opts.CloudInit)
@@ -380,14 +381,14 @@ func (d *driver) Start(opts StartOptions) error {
 			return fmt.Errorf("generating cloud-init iso: %w", err)
 		}
 
-		desc.Scsi().AddDisk(storage.NewCdromDrive("cloud-init-cidata", d.storagePath(CloudInitIsoFile)))
+		desc.Scsi().AddDisk(storage.NewCdromDrive(diskIdCloudInit().toStorage(), d.storagePath(CloudInitIsoFile)))
 	}
 
 	for _, volume := range opts.Volumes {
 		switch opts := volume.options.(type) {
 		case cephVolumeOpts:
 			// TODO: pass vendor and model, and more rbd options
-			desc.Scsi().AddDisk(storage.NewRbdDrive(volume.id.Serial, opts.pool, opts.name))
+			desc.Scsi().AddDisk(storage.NewRbdDrive(volume.id.toStorage(), opts.pool, opts.name))
 		default:
 			panic("not implemented")
 		}
@@ -944,7 +945,17 @@ func (d *driver) AttachNetworkAdapter(adapter NetworkAdapter) error {
 }
 
 func (d *driver) DetachNetworkAdapter(name string) error {
-	return newRestartRequiredErr("network adapter detach is not supported")
+	mon, err := d.connectMonitor()
+	if err != nil {
+		return err
+	}
+
+	err = pcie.UnplugTapNetworkDevice(mon, name)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (d *driver) GetVolumeIdentifiers() ([]DiskIdentifier, error) {
@@ -1000,7 +1011,13 @@ func (d *driver) GetVolumeIdentifiers() ([]DiskIdentifier, error) {
 			}
 		}
 
-		volumeIds = append(volumeIds, DiskIdFull(vendor, product, serial))
+		id := DiskIdFull(vendor, product, serial)
+
+		if id == diskIdCloudInit() || id == diskIdRootdisk() {
+			continue
+		}
+
+		volumeIds = append(volumeIds, id)
 	}
 
 	return volumeIds, nil
@@ -1010,7 +1027,7 @@ func (d *driver) AttachVolume(volume Volume) error {
 	var device storage.ScsiDrive
 	switch opts := volume.options.(type) {
 	case cephVolumeOpts:
-		device = storage.NewRbdDrive(volume.id.Serial, opts.pool, opts.name)
+		device = storage.NewRbdDrive(volume.id.toStorage(), opts.pool, opts.name)
 	default:
 		return errors.New("unsupported volume type")
 	}
@@ -1030,5 +1047,29 @@ func (d *driver) AttachVolume(volume Volume) error {
 }
 
 func (d *driver) DetachVolume(id DiskIdentifier) error {
-	return newRestartRequiredErr("volume detach is not supported")
+	mon, err := d.connectMonitor()
+	if err != nil {
+		return err
+	}
+
+	storageId := id.toStorage()
+
+	err = mon.DeleteDevice(fmt.Sprintf("scsi-%s", storageId.NodeName()))
+	if err != nil && !strings.Contains(err.Error(), "not found") {
+		return err
+	}
+
+	// TODO: we need to wait for the event here
+	// should maybe take a context for timeout
+
+	time.Sleep(time.Second)
+
+	// TODO: check if it exists first? since checking the qemu error description is brittle
+
+	err = mon.DeleteBlockDevice(storageId.NodeName())
+	if err != nil && !strings.Contains(err.Error(), "Failed to find node") {
+		return err
+	}
+
+	return nil
 }
