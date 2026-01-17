@@ -8,7 +8,6 @@ import (
 	"log"
 	"net"
 	"os"
-	"os/exec"
 	"path"
 	"slices"
 	"strconv"
@@ -242,10 +241,9 @@ func (d *driver) createRootDisk(sourcePath string, sourceFormat string) error {
 
 	args = append(args, "-O", "raw", sourcePath, rootDiskPath)
 
-	cmd := exec.Command("qemu-img", args...)
-	err = cmd.Run()
+	err = util.RunCmd("qemu-img", args...)
 	if err != nil {
-		return fmt.Errorf("converting image (%s): %w", cmd, err)
+		return fmt.Errorf("converting image: %w", err)
 	}
 
 	return nil
@@ -629,10 +627,9 @@ func (d *driver) resizeRootdisk(size uint64) error {
 
 	sizeKiB := desiredSize / 1024
 
-	cmd := exec.Command("qemu-img", "resize", "-f", "raw", d.storagePath(RootDiskFileName), fmt.Sprintf("%dK", sizeKiB))
-	err = cmd.Run()
+	err = util.RunCmd("qemu-img", "resize", "-f", "raw", d.storagePath(RootDiskFileName), fmt.Sprintf("%dK", sizeKiB))
 	if err != nil {
-		return fmt.Errorf("resizing image (%s): %w", cmd, err)
+		return fmt.Errorf("resizing image: %w", sizeKiB, err)
 	}
 
 	return nil
