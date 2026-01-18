@@ -371,7 +371,7 @@ func (d *driver) Start(opts StartOptions) error {
 
 	desc.AddChardev(chardev.NewHub("console", "console-ringbuf", "console-socket"))
 
-	desc.Scsi().AddDisk(storage.NewImageDrive(diskIdRootdisk().toStorage(), d.storagePath(RootDiskFileName)))
+	desc.Scsi().AddDisk(storage.NewImageDrive(diskIdRootdisk().toStorage(), d.storagePath(RootDiskFileName), opts.ReadonlyDisk))
 
 	if (opts.CloudInit != CloudInit{}) {
 		err := d.generateCloudInitIso(opts.CloudInit)

@@ -16,9 +16,10 @@ const (
 )
 
 type imageDrive struct {
-	id   DiskIdentifier
-	path string
-	typ  imageDriveType
+	id       DiskIdentifier
+	path     string
+	typ      imageDriveType
+	readonly bool
 }
 
 type ImageDrive interface {
@@ -26,11 +27,12 @@ type ImageDrive interface {
 	BlkDrive
 }
 
-func NewImageDrive(id DiskIdentifier, path string) ImageDrive {
+func NewImageDrive(id DiskIdentifier, path string, readonly bool) ImageDrive {
 	return &imageDrive{
-		id:   id,
-		path: path,
-		typ:  typeDisk,
+		id:       id,
+		path:     path,
+		typ:      typeDisk,
+		readonly: readonly,
 	}
 }
 
@@ -52,7 +54,7 @@ func (d *imageDrive) GetScsiHotplug(bus string) devices.HotplugDevice {
 
 func (d *imageDrive) Plug(m qmp.Monitor, bus string) error {
 	var driver string
-	var readonly bool
+	readonly := d.readonly
 
 	switch d.typ {
 	case typeDisk:
