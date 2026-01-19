@@ -13,21 +13,18 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/gwenya/qemu-driver/pidfd"
-	"github.com/kdomanski/iso9660"
-	"golang.org/x/sys/unix"
-
 	"github.com/gwenya/qemu-driver/cmdBuilder"
 	"github.com/gwenya/qemu-driver/devices/chardev"
 	"github.com/gwenya/qemu-driver/devices/pcie"
 	"github.com/gwenya/qemu-driver/devices/storage"
+	"github.com/gwenya/qemu-driver/execution"
 	"github.com/gwenya/qemu-driver/machine"
 	"github.com/gwenya/qemu-driver/qmp"
 	"github.com/gwenya/qemu-driver/util"
+	"github.com/kdomanski/iso9660"
 )
 
 type Driver interface {
@@ -61,82 +58,40 @@ type driver struct {
 	storageDirectory string
 	runtimeDirectory string
 
-	mu               sync.Mutex
-	qemuPidFd        int
-	pidfdWaiter      pidfd.Waiter
-	pidfdWaiterOwned bool
-	mon              qmp.Monitor
-	cancelWatcher    context.CancelFunc
+	executionStrategy execution.Strategy
+
+	mu            sync.Mutex
+	mon           qmp.Monitor
+	cancelWatcher context.CancelFunc
 }
 
 func New(opts Options) (Driver, error) {
-	pidfdWaiter := opts.PidFdWaiter
-	pidfdWaiterOwned := false
-	if pidfdWaiter == nil {
-		pidfdWaiterOwned = true
-		var err error
-		pidfdWaiter, err = pidfd.NewWaiter()
-		if err != nil {
-			return nil, fmt.Errorf("creating pidfd waiter: %w", err)
-		}
+	executionStrategy, err := execution.NewForkStrategy(execution.ForkOptions{
+		PidFilePath:    path.Join(opts.RuntimeDirectory, string(QemuPidFileName)),
+		StdoutFilePath: path.Join(opts.StorageDirectory, string(QemuStdOutFileName)),
+		StderrFilePath: path.Join(opts.StorageDirectory, string(QemuStdErrFileName)),
+		PidFdWaiter:    opts.PidFdWaiter,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("creating execution strategy: %w", err)
 	}
+
 	d := &driver{
-		systemId:         opts.SystemId,
-		qemuPath:         opts.QemuPath,
-		logger:           opts.Logger,
-		qemuPidFd:        -1,
-		storageDirectory: opts.StorageDirectory,
-		runtimeDirectory: opts.RuntimeDirectory,
-		pidfdWaiter:      pidfdWaiter,
-		pidfdWaiterOwned: pidfdWaiterOwned,
+		systemId:          opts.SystemId,
+		qemuPath:          opts.QemuPath,
+		logger:            opts.Logger,
+		storageDirectory:  opts.StorageDirectory,
+		runtimeDirectory:  opts.RuntimeDirectory,
+		executionStrategy: executionStrategy,
 	}
 
-	pidFilePath := d.runtimePath(QemuPidFileName)
-	pidFileBytes, err := os.ReadFile(pidFilePath)
-	if os.IsNotExist(err) {
-		return d, nil
-	} else if err != nil {
-		return nil, fmt.Errorf("failed to open pid file %q: %w", pidFilePath, err)
-	}
-
-	pidInt64, err := strconv.ParseInt(strings.TrimSpace(string(pidFileBytes)), 10, 32)
+	doneCh, err := executionStrategy.FindRunning()
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse pid file content %q: %w", string(pidFileBytes), err)
+		return nil, fmt.Errorf("finding running qemu process: %w", err)
 	}
 
-	pid := int(pidInt64)
-	pidfd, err := unix.PidfdOpen(pid, unix.PIDFD_NONBLOCK)
-	if errors.Is(err, unix.ESRCH) {
-		err := os.Remove(pidFilePath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to remove old pid file %q: %w", pidFilePath, err)
-		}
-
-		return d, nil
-	} else if err != nil {
-		return nil, fmt.Errorf("failed to open process handle for pid %d: %w", pid, err)
-	}
-
-	cmdline, err := util.GetCmdline(pid)
-	if err != nil {
-		return nil, fmt.Errorf("getting cmdline of running process: %w", err)
-	}
-
-	// TODO: this feels very brittle, maybe instead/first make an attempt to connect to the monitor?
-	if len(cmdline) < 3 || cmdline[0] != d.qemuPath || cmdline[1] != "-uuid" || cmdline[2] != d.systemId.String() {
-		err := os.Remove(pidFilePath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to remove old pid file %q: %w", pidFilePath, err)
-		}
-
-		return d, nil
-	}
-
-	d.qemuPidFd = pidfd
-
-	err = d.startWatcher()
-	if err != nil {
-		return nil, fmt.Errorf("creating qemu process watcher: %w", err)
+	if doneCh != nil {
+		d.startWatcher(doneCh)
 	}
 
 	return d, nil
@@ -149,35 +104,15 @@ func (d *driver) Close() error {
 		d.cancelWatcher()
 	}
 
-	var errs []error
-
-	if d.qemuPidFd != -1 {
-		err := d.pidfdWaiter.Remove(d.qemuPidFd)
-		if err != nil {
-			errs = append(errs, err)
-		}
-	}
-
-	if d.pidfdWaiterOwned {
-		err := d.pidfdWaiter.Close()
-		if err != nil {
-			errs = append(errs, err)
-		}
-	}
-
-	if len(errs) > 0 {
-		return errors.Join(errs...)
+	err := d.executionStrategy.Close()
+	if err != nil {
+		return err
 	}
 
 	return nil
 }
 
-func (d *driver) startWatcher() error {
-	done, err := d.pidfdWaiter.Add(d.qemuPidFd)
-	if err != nil {
-		return fmt.Errorf("adding qemu pidfd to waiter: %w", err)
-	}
-
+func (d *driver) startWatcher(done chan struct{}) {
 	ctx, cancel := context.WithCancel(context.Background())
 	d.cancelWatcher = cancel
 
@@ -197,13 +132,7 @@ func (d *driver) startWatcher() error {
 			}
 		}
 
-		err := syscall.Close(d.qemuPidFd)
-		if err != nil {
-			d.logger.Logf("failed to close pidfd: %v", err)
-		}
-
 		d.mon = nil
-		d.qemuPidFd = -1
 		d.cancelWatcher = nil
 
 		if ctx.Err() == nil {
@@ -211,7 +140,6 @@ func (d *driver) startWatcher() error {
 		}
 	}()
 
-	return nil
 }
 
 func (d *driver) onQemuProcessExit() {
@@ -255,11 +183,16 @@ func (d *driver) Create(opts CreateOptions) error {
 
 	// we specifically check for the pidfd here rather than using GetStatus() because it matters
 	// whether the qemu process is running, not whether the VM is in a running state.
-	if d.qemuPidFd != -1 {
+	isRunning, err := d.executionStrategy.IsRunning()
+	if err != nil {
+		return fmt.Errorf("checking if qemu is running: %w", err)
+	}
+
+	if isRunning {
 		return fmt.Errorf("qemu process is running")
 	}
 
-	err := d.createRootDisk(opts.ImageSourcePath, opts.ImageSourceFormat)
+	err = d.createRootDisk(opts.ImageSourcePath, opts.ImageSourceFormat)
 	if err != nil {
 		return fmt.Errorf("creating root disk: %w", err)
 	}
@@ -315,7 +248,6 @@ func (d *driver) Start(opts StartOptions) error {
 		"-uuid", d.systemId.String(),
 		"-S",
 		"-nographic",
-		//"-display", "gtk",
 		"-nodefaults",
 		"-no-user-config",
 		"-serial", "chardev:console",
@@ -423,42 +355,12 @@ func (d *driver) Start(opts StartOptions) error {
 		return fmt.Errorf("writing config file: %w", err)
 	}
 
-	stdout, err := os.Create(d.storagePath(QemuStdOutFileName))
+	doneCh, err := d.executionStrategy.Start(builder.GetCommand(), builder.GetFds())
 	if err != nil {
-		return fmt.Errorf("creating stdout log file: %w", err)
+		return fmt.Errorf("starting qemu: %w", err)
 	}
 
-	//goland:noinspection GoUnhandledErrorResult
-	defer stdout.Close()
-
-	stderr, err := os.Create(d.storagePath(QemuStdErrFileName))
-	if err != nil {
-		return fmt.Errorf("creating stderr log file: %w", err)
-	}
-
-	//goland:noinspection GoUnhandledErrorResult
-	defer stderr.Close()
-
-	builder.ConnectStderr(stderr)
-	builder.ConnectStdout(stdout)
-
-	builder.SetSession(true)
-
-	var pidfdReceiver int
-	builder.SetPidFdReceiver(&pidfdReceiver)
-
-	cmd := builder.Build()
-
-	err = cmd.Start()
-	if err != nil {
-		return fmt.Errorf("starting qemu process (%s): %w", cmd, err)
-	}
-
-	d.qemuPidFd = pidfdReceiver
-	err = d.startWatcher()
-	if err != nil {
-		return fmt.Errorf("starting qemu process watcher: %w", err)
-	}
+	d.startWatcher(doneCh)
 
 	mon, err := d.connectMonitor()
 	if err != nil {
@@ -667,7 +569,15 @@ func (d *driver) Reboot() error {
 
 func (d *driver) getStatus() Status {
 	// TODO: proper state logic for starting, stopping and restarting states
-	if d.qemuPidFd == -1 {
+	// if these are even necessary
+
+	isRunning, err := d.executionStrategy.IsRunning()
+	if err != nil {
+		return Unknown
+	}
+
+	// TODO: is this a guarantee that the process is not running? There's a TODO for the case that starting the process is successful but the watching fails
+	if !isRunning {
 		isCreated, err := util.FileExists(d.storagePath(CreatedFlagFileName))
 		if err != nil {
 			d.logger.Logf("failed to check creation flag existence: %v\n", err)
