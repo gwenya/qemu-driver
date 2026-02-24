@@ -10,6 +10,7 @@ import (
 	"os"
 	"path"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -65,34 +66,26 @@ type driver struct {
 	cancelWatcher context.CancelFunc
 }
 
-func New(opts Options) (Driver, error) {
-	executionStrategy, err := execution.NewForkStrategy(execution.ForkOptions{
-		PidFilePath:    path.Join(opts.RuntimeDirectory, string(QemuPidFileName)),
-		StdoutFilePath: path.Join(opts.StorageDirectory, string(QemuStdOutFileName)),
-		StderrFilePath: path.Join(opts.StorageDirectory, string(QemuStdErrFileName)),
-		PidFdWaiter:    opts.PidFdWaiter,
+func New(opts ...Option) (Driver, error) {
+	d := &driver{}
+
+	sort.Slice(opts, func(i, j int) bool {
+		return opts[i].priority() < opts[j].priority()
 	})
+
+	for _, opt := range opts {
+		err := opt.apply(d)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	doneCh, err := d.executionStrategy.FindRunning()
 	if err != nil {
-		return nil, fmt.Errorf("creating execution strategy: %w", err)
+		return nil, err
 	}
 
-	d := &driver{
-		systemId:          opts.SystemId,
-		qemuPath:          opts.QemuPath,
-		logger:            opts.Logger,
-		storageDirectory:  opts.StorageDirectory,
-		runtimeDirectory:  opts.RuntimeDirectory,
-		executionStrategy: executionStrategy,
-	}
-
-	doneCh, err := executionStrategy.FindRunning()
-	if err != nil {
-		return nil, fmt.Errorf("finding running qemu process: %w", err)
-	}
-
-	if doneCh != nil {
-		d.startWatcher(doneCh)
-	}
+	d.startWatcher(doneCh)
 
 	return d, nil
 }
@@ -360,6 +353,8 @@ func (d *driver) Start(opts StartOptions) error {
 		return fmt.Errorf("starting qemu: %w", err)
 	}
 
+	builder.CloseFds()
+
 	d.startWatcher(doneCh)
 
 	mon, err := d.connectMonitor()
@@ -389,18 +384,21 @@ func (d *driver) Start(opts StartOptions) error {
 }
 
 func (d *driver) makeUnixListener(path string) (*os.File, error) {
-	listener, err := net.Listen("unix", path)
+	listener, err := net.ListenUnix("unix", &net.UnixAddr{Name: path, Net: "unix"})
 	if err != nil {
 		return nil, fmt.Errorf("creating listener: %w", err)
 	}
 
+	defer listener.Close()
+
+	listener.SetUnlinkOnClose(false)
+
 	err = os.Chmod(path, 0777)
 	if err != nil {
-		_ = listener.Close()
 		return nil, fmt.Errorf("changing permissions on socket path: %w", err)
 	}
 
-	socketFile, err := listener.(*net.UnixListener).File()
+	socketFile, err := listener.File()
 	if err != nil {
 		return nil, fmt.Errorf("getting fd from listener: %w", err)
 	}

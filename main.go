@@ -8,9 +8,8 @@ import (
 	"path"
 	"slices"
 
-	"github.com/gwenya/qemu-driver/driver"
-
 	"github.com/google/uuid"
+	"github.com/gwenya/qemu-driver/driver"
 )
 
 type logger struct{}
@@ -20,6 +19,7 @@ func (l *logger) Logf(format string, v ...interface{}) {
 }
 
 func main() {
+
 	id := uuid.MustParse("804859f4-343b-4a0f-97b1-75d04aee531d")
 
 	storagePath := path.Join("/tmp", id.String())
@@ -43,26 +43,28 @@ func main() {
 	}
 
 	userData := `#cloud-config
-users:
-  - name: root
-    lock_passwd: false
-    hashed_passwd: "$6$rounds=4096$nqxzsCUB62RiUjKp$YX0V8FDfz/9LdV6d5s0UGKBT8tAH2svzBILoS9Z/rWXjcny9Z9.ANt5XI6PU87268UrJrWeqtmH1lupgZtKZI/"
+	users:
+	 - name: root
+	   lock_passwd: false
+	   hashed_passwd: "$6$rounds=4096$nqxzsCUB62RiUjKp$YX0V8FDfz/9LdV6d5s0UGKBT8tAH2svzBILoS9Z/rWXjcny9Z9.ANt5XI6PU87268UrJrWeqtmH1lupgZtKZI/"
+	
+	 - name: arch
+	   lock_passwd: false
+	   hashed_passwd: "$6$ekjadUze3yUXluSP$KTBA960c5FiFQIVHz7WQ8/9paorVjLWbnQ./NpUG8sE99ehX4SELqrMPEFq/yFKCB55i9gw6xbg.75i49WRlh/"
+	
+	runcmd:
+	 - echo 'PermitRootLogin yes' >> /etc/ssh/sshd_config
+	`
 
-  - name: arch
-    lock_passwd: false
-    hashed_passwd: "$6$ekjadUze3yUXluSP$KTBA960c5FiFQIVHz7WQ8/9paorVjLWbnQ./NpUG8sE99ehX4SELqrMPEFq/yFKCB55i9gw6xbg.75i49WRlh/"
-
-runcmd:
-  - echo 'PermitRootLogin yes' >> /etc/ssh/sshd_config
-`
-
-	d, err := driver.New(driver.Options{
-		SystemId:         id,
-		StorageDirectory: storagePath,
-		RuntimeDirectory: storagePath,
-		QemuPath:         "/usr/bin/qemu-system-x86_64",
-		Logger:           &logger{},
-	})
+	d, err := driver.New(
+		driver.WithSystemId(id),
+		driver.WithStorageDirectory(storagePath),
+		driver.WithRuntimeDirectory(storagePath),
+		driver.WithQemuPath("/usr/bin/qemu-system-x86_64"),
+		driver.WithLogger(&logger{}),
+		driver.WithSystemdStrategy("qemu-", nil),
+		//driver.WithForkStrategy(nil),
+	)
 
 	//	FirmwareSourcePath: firmwareSource,
 	//	NvramSourcePath:    nvramSource,

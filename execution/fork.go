@@ -30,7 +30,7 @@ type ForkOptions struct {
 	PidFilePath    string
 	StdoutFilePath string
 	StderrFilePath string
-	logger         Logger
+	Logger         Logger
 	PidFdWaiter    pidfd.Waiter
 }
 
@@ -52,7 +52,7 @@ func NewForkStrategy(opts ForkOptions) (Strategy, error) {
 		stderrFile:       opts.StderrFilePath,
 		pidfdWaiter:      pidfdWaiter,
 		pidfdWaiterOwned: pidfdWaiterOwned,
-		logger:           opts.logger,
+		logger:           opts.Logger,
 		pidFd:            -1,
 	}, nil
 }
@@ -63,7 +63,9 @@ func (s *forkStrategy) FindRunning() (chan struct{}, error) {
 
 	pidFileBytes, err := os.ReadFile(s.pidFile)
 	if os.IsNotExist(err) {
-		return nil, nil
+		closed := make(chan struct{})
+		close(closed)
+		return closed, nil
 	} else if err != nil {
 		return nil, fmt.Errorf("opening pid file: %w", err)
 	}
@@ -81,12 +83,14 @@ func (s *forkStrategy) FindRunning() (chan struct{}, error) {
 			return nil, fmt.Errorf("failed to remove old pid file %q: %w", s.pidFile, err)
 		}
 
-		return nil, nil
+		closed := make(chan struct{})
+		close(closed)
+		return closed, nil
 	} else if err != nil {
 		return nil, fmt.Errorf("failed to open process handle for pid %d: %w", pid, err)
 	}
 
-	// TODO: ensure it is the right process and not a reused PID
+	// TODO: ensure it is the right process and not a reused PID?
 
 	s.pidFd = fd
 

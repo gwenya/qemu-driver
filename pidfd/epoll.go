@@ -133,9 +133,12 @@ loop:
 				break loop
 			}
 
+			// TODO: need to lock the mutex
+
 			ch, ok := e.fdmap[int(event.Fd)]
 			if ok {
 				close(ch)
+				// TODO: remove from the map
 				// with EPOLL_CTL_DEL the only errors that can occur are ENOENT (doesn't matter) and perhaps ENOMEM (no way to deal with that)
 				_ = syscall.EpollCtl(e.epollFd, syscall.EPOLL_CTL_DEL, int(event.Fd), nil)
 			}

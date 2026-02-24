@@ -19,4 +19,5 @@ const (
 	QemuQmpSocketFileName RuntimeFilename = "qmp.sock"
 	ConsoleSocketFileName RuntimeFilename = "console.sock"
 	QemuPidFileName       RuntimeFilename = "qemu.pid"
+	QemuUnitNameFileName  RuntimeFilename = "qemu.unit-name"
 )

@@ -17,7 +17,3 @@ type Strategy interface {
 type Logger interface {
 	Logf(format string, v ...interface{})
 }
-
-type systemdStrategy struct {
-	unitName string
-}
