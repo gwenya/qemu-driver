@@ -85,7 +85,9 @@ func New(opts ...Option) (Driver, error) {
 		return nil, err
 	}
 
-	d.startWatcher(doneCh)
+	if doneCh != nil {
+		d.startWatcher(doneCh)
+	}
 
 	return d, nil
 }

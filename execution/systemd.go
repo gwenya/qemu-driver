@@ -71,9 +71,7 @@ func NewSystemdStrategy(opts SystemdOptions) (Strategy, error) {
 func (s *systemdStrategy) FindRunning() (chan struct{}, error) {
 	unitNameBytes, err := os.ReadFile(s.unitNameFile)
 	if os.IsNotExist(err) {
-		closed := make(chan struct{})
-		close(closed)
-		return closed, nil
+		return nil, nil
 	} else if err != nil {
 		return nil, fmt.Errorf("opening unit name file: %w", err)
 	}
@@ -114,9 +112,7 @@ func (s *systemdStrategy) FindRunning() (chan struct{}, error) {
 		return nil, err
 	}
 
-	closed := make(chan struct{})
-	close(closed)
-	return closed, nil
+	return nil, nil
 }
 
 type ExtraFd struct {

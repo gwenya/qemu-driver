@@ -63,9 +63,7 @@ func (s *forkStrategy) FindRunning() (chan struct{}, error) {
 
 	pidFileBytes, err := os.ReadFile(s.pidFile)
 	if os.IsNotExist(err) {
-		closed := make(chan struct{})
-		close(closed)
-		return closed, nil
+		return nil, nil
 	} else if err != nil {
 		return nil, fmt.Errorf("opening pid file: %w", err)
 	}
@@ -83,9 +81,7 @@ func (s *forkStrategy) FindRunning() (chan struct{}, error) {
 			return nil, fmt.Errorf("failed to remove old pid file %q: %w", s.pidFile, err)
 		}
 
-		closed := make(chan struct{})
-		close(closed)
-		return closed, nil
+		return nil, nil
 	} else if err != nil {
 		return nil, fmt.Errorf("failed to open process handle for pid %d: %w", pid, err)
 	}
