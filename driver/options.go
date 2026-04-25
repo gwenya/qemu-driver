@@ -98,18 +98,21 @@ func WithForkStrategy(pidFdWaiter pidfd.Waiter) Option {
 	}
 }
 
-func WithSystemdStrategy(unitNamePrefix string, sdWaiter systemd.Waiter) Option {
+type SystemdStrategyOptions struct {
+	UnitNamePrefix string
+	SELinuxContext string
+}
+
+func WithSystemdStrategy(opts SystemdStrategyOptions, sdWaiter systemd.Waiter) Option {
 	return &driverOption{
 		fn: func(d *driver) error {
 			executionStrategy, err := execution.NewSystemdStrategy(execution.SystemdOptions{
 				UnitNameFilePath: path.Join(d.runtimePath(QemuUnitNameFileName)),
-				UnitNamePrefix:   unitNamePrefix,
+				UnitNamePrefix:   opts.UnitNamePrefix,
+				SELinuxContext:   opts.SELinuxContext,
 				Logger:           d.logger,
 				SystemdWaiter:    sdWaiter,
 			})
-			if err != nil {
-				return err
-			}
 			if err != nil {
 				return err
 			}

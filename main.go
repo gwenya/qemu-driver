@@ -62,7 +62,7 @@ func main() {
 		driver.WithRuntimeDirectory(storagePath),
 		driver.WithQemuPath("/usr/bin/qemu-system-x86_64"),
 		driver.WithLogger(&logger{}),
-		driver.WithSystemdStrategy("qemu-", nil),
+		driver.WithSystemdStrategy(driver.SystemdStrategyOptions{UnitNamePrefix: "qemu-"}, nil),
 		//driver.WithForkStrategy(nil),
 	)
 

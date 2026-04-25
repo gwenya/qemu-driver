@@ -15,6 +15,7 @@ type systemdStrategy struct {
 	unitName       string
 	unitNameFile   string
 	unitNamePrefix string
+	selinuxContext string
 	sdConn         *sd.Conn
 	sdConnOwned    bool
 	sdWaiter       systemd.Waiter
@@ -27,6 +28,7 @@ type systemdStrategy struct {
 type SystemdOptions struct {
 	UnitNameFilePath  string
 	UnitNamePrefix    string
+	SELinuxContext    string
 	Logger            Logger
 	SystemdWaiter     systemd.Waiter
 	SystemdConnection *sd.Conn
@@ -60,6 +62,7 @@ func NewSystemdStrategy(opts SystemdOptions) (Strategy, error) {
 	return &systemdStrategy{
 		unitNameFile:   opts.UnitNameFilePath,
 		unitNamePrefix: opts.UnitNamePrefix,
+		selinuxContext: opts.SELinuxContext,
 		sdConn:         sdConn,
 		sdConnOwned:    sdConnOwned,
 		sdWaiter:       sdWaiter,
@@ -138,14 +141,22 @@ func (s *systemdStrategy) Start(cmd []string, fds []*os.File) (chan struct{}, er
 
 	ch := make(chan string)
 
-	_, err = s.sdConn.StartTransientUnitContext(context.TODO(), unitName, "replace", []sd.Property{
+	props := []sd.Property{
 		sd.PropDescription(fmt.Sprintf("Beanstack VM instance <TODO>")),
 		sd.PropExecStart(cmd, false),
 		{
 			Name:  "ExtraFileDescriptors",
 			Value: dbus.MakeVariant(extraFds),
 		},
-	}, ch)
+	}
+	if s.selinuxContext != "" {
+		props = append(props, sd.Property{
+			Name:  "SELinuxContext",
+			Value: dbus.MakeVariant(s.selinuxContext),
+		})
+	}
+
+	_, err = s.sdConn.StartTransientUnitContext(context.TODO(), unitName, "replace", props, ch)
 	if err != nil {
 		return nil, fmt.Errorf("starting transient unit: %w", err)
 	}
