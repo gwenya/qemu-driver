@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	doQmp "github.com/digitalocean/go-qemu/qmp"
 	"github.com/google/uuid"
 	"github.com/gwenya/qemu-driver/cmdBuilder"
 	"github.com/gwenya/qemu-driver/devices/chardev"
@@ -64,6 +65,7 @@ type driver struct {
 	mu            sync.Mutex
 	mon           qmp.Monitor
 	cancelWatcher context.CancelFunc
+	eventCh       chan Event
 }
 
 func New(opts ...Option) (Driver, error) {
@@ -111,10 +113,23 @@ func (d *driver) startWatcher(done chan struct{}) {
 	ctx, cancel := context.WithCancel(context.Background())
 	d.cancelWatcher = cancel
 
+	events := d.mon.Events()
+
 	go func() {
-		select {
-		case <-done:
-		case <-ctx.Done():
+	loop:
+		for {
+			select {
+			case <-done:
+				break loop
+			case <-ctx.Done():
+				break loop
+			case event := <-events:
+				if event.Event == "" {
+					break loop // TODO: reconnect monitor?
+				}
+
+				d.handleQemuEvent(event)
+			}
 		}
 
 		d.mu.Lock()
@@ -135,6 +150,23 @@ func (d *driver) startWatcher(done chan struct{}) {
 		}
 	}()
 
+}
+
+func (d *driver) handleQemuEvent(event doQmp.Event) {
+	switch event.Event {
+	case "SHUTDOWN":
+		guest := false
+		if isGuest, ok := event.Data["guest"]; ok {
+			guest = isGuest.(bool)
+		}
+		d.eventCh <- StoppedEvent{Guest: guest}
+	case "RESET":
+		guest := false
+		if isGuest, ok := event.Data["guest"]; ok {
+			guest = isGuest.(bool)
+		}
+		d.eventCh <- RestartedEvent{Guest: guest}
+	}
 }
 
 func (d *driver) onQemuProcessExit() {
@@ -357,12 +389,12 @@ func (d *driver) Start(opts StartOptions) error {
 
 	builder.CloseFds()
 
-	d.startWatcher(doneCh)
-
 	mon, err := d.connectMonitor()
 	if err != nil {
 		return err
 	}
+
+	d.startWatcher(doneCh)
 
 	var hotplugErrors []error
 
@@ -381,6 +413,10 @@ func (d *driver) Start(opts StartOptions) error {
 	if err != nil {
 		return fmt.Errorf("starting VM execution: %w", err)
 	}
+
+	go func() {
+		d.eventCh <- StartedEvent{}
+	}()
 
 	return nil
 }

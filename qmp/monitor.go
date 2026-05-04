@@ -1,6 +1,7 @@
 package qmp
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -11,6 +12,7 @@ import (
 )
 
 type Monitor interface {
+	Events() <-chan qmp.Event
 	AddDevice(device map[string]any) error
 	DeleteDevice(id string) error
 	AddBlockDevice(blockDev map[string]any) error
@@ -121,6 +123,11 @@ func (m *monitor) runCommandWithResponse(command string, args map[string]any, re
 	}
 
 	return nil
+}
+
+func (m *monitor) Events() <-chan qmp.Event {
+	events, _ := m.q.Events(context.Background())
+	return events
 }
 
 func (m *monitor) AddDevice(device map[string]any) error {

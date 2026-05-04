@@ -123,3 +123,12 @@ func WithSystemdStrategy(opts SystemdStrategyOptions, sdWaiter systemd.Waiter) O
 		prio: 1,
 	}
 }
+
+func WithEventChannel(ch chan Event) Option {
+	return &driverOption{
+		fn: func(d *driver) error {
+			d.eventCh = ch
+			return nil
+		},
+	}
+}
