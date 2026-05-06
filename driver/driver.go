@@ -115,6 +115,8 @@ func (d *driver) startWatcher(done chan struct{}) {
 
 	events := d.mon.Events()
 
+	var lastReset time.Time
+
 	go func() {
 	loop:
 		for {
@@ -126,6 +128,16 @@ func (d *driver) startWatcher(done chan struct{}) {
 			case event := <-events:
 				if event.Event == "" {
 					break loop // TODO: reconnect monitor?
+				}
+
+				if event.Event == "RESET" {
+					if (lastReset == time.Time{}) {
+						lastReset = time.Now()
+					} else if time.Now().Before(lastReset.Add(time.Millisecond * 100)) {
+						// qemu always sends two RESET events, ignore the second one
+						lastReset = time.Time{}
+						continue
+					}
 				}
 
 				d.handleQemuEvent(event)
