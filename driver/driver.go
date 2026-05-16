@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"codeberg.org/gwenya/go-fanout"
 	doQmp "github.com/digitalocean/go-qemu/qmp"
 	"github.com/google/uuid"
 	"github.com/gwenya/qemu-driver/cmdBuilder"
@@ -65,11 +66,13 @@ type driver struct {
 	mu            sync.Mutex
 	mon           qmp.Monitor
 	cancelWatcher context.CancelFunc
-	eventCh       chan Event
+	events        fanout.Fanout[Event]
 }
 
 func New(opts ...Option) (Driver, error) {
-	d := &driver{}
+	d := &driver{
+		events: fanout.NewWithGuaranteedDelivery[Event](),
+	}
 
 	sort.Slice(opts, func(i, j int) bool {
 		return opts[i].priority() < opts[j].priority()
@@ -171,13 +174,13 @@ func (d *driver) handleQemuEvent(event doQmp.Event) {
 		if isGuest, ok := event.Data["guest"]; ok {
 			guest = isGuest.(bool)
 		}
-		d.eventCh <- StoppedEvent{Guest: guest}
+		d.events.Publish(StoppedEvent{Guest: guest})
 	case "RESET":
 		guest := false
 		if isGuest, ok := event.Data["guest"]; ok {
 			guest = isGuest.(bool)
 		}
-		d.eventCh <- RestartedEvent{Guest: guest}
+		d.events.Publish(RestartedEvent{Guest: guest})
 	}
 }
 
@@ -426,9 +429,7 @@ func (d *driver) Start(opts StartOptions) error {
 		return fmt.Errorf("starting VM execution: %w", err)
 	}
 
-	go func() {
-		d.eventCh <- StartedEvent{}
-	}()
+	d.events.Publish(StartedEvent{})
 
 	return nil
 }
@@ -586,8 +587,6 @@ func (d *driver) resizeRootdisk(size uint64) error {
 }
 
 func (d *driver) Stop() error {
-	// TODO: if it fails, kill the qemu process
-
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	mon, err := d.connectMonitor()
@@ -595,9 +594,43 @@ func (d *driver) Stop() error {
 		return err
 	}
 
+	events := make(chan Event)
+	stopped := make(chan bool)
+
+	d.events.Subscribe(events)
+
+	go func() {
+		defer d.events.Unsubscribe(events)
+		timer := time.NewTimer(time.Second * 1)
+		for {
+			select {
+			case evt := <-events:
+				if _, ok := evt.(StoppedEvent); ok {
+					stopped <- true
+					return
+				}
+			case <-timer.C:
+				stopped <- false
+				return
+			}
+		}
+	}()
+
+	var kill bool
+
 	err = mon.Quit()
 	if err != nil {
-		return fmt.Errorf("stopping VM: %w", err)
+		d.logger.Logf("failed to stop VM, killing it: %v", err)
+		kill = true
+	} else {
+		kill = !<-stopped
+	}
+
+	if kill {
+		err := d.executionStrategy.Kill()
+		if err != nil {
+			return fmt.Errorf("killing VM process: %w", err)
+		}
 	}
 
 	err = d.mon.Disconnect()

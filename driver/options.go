@@ -127,7 +127,7 @@ func WithSystemdStrategy(opts SystemdStrategyOptions, sdWaiter systemd.Waiter) O
 func WithEventChannel(ch chan Event) Option {
 	return &driverOption{
 		fn: func(d *driver) error {
-			d.eventCh = ch
+			d.events.Subscribe(ch)
 			return nil
 		},
 	}
