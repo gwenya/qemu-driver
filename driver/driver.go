@@ -654,6 +654,7 @@ func (d *driver) getStatus() Status {
 
 	isRunning, err := d.executionStrategy.IsRunning()
 	if err != nil {
+		d.logger.Logf("execution strategy IsRunning() failed: %v", err)
 		return Unknown
 	}
 
@@ -684,7 +685,12 @@ func (d *driver) getStatus() Status {
 		return Unknown
 	}
 
-	return mapQemuStatus(qemuStatus)
+	mappedStatus := mapQemuStatus(qemuStatus)
+	if mappedStatus == Unknown {
+		d.logger.Logf("qemu status %s mapped to Unknown", qemuStatus)
+	}
+
+	return mappedStatus
 }
 
 func (d *driver) GetStatus() Status {
