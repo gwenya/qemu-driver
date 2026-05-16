@@ -638,7 +638,7 @@ func (d *driver) Stop() error {
 		return err
 	}
 
-	stopper := NewStopper(time.Second * 1)
+	stopper := NewStopper(time.Second * 15)
 	stopEventCh := make(chan Event)
 
 	go func() {
@@ -654,7 +654,7 @@ func (d *driver) Stop() error {
 		exitEventCh <- d.waitForEvent(func(e Event) bool {
 			_, ok := e.(ProcessExitEvent)
 			return ok
-		}, NewStopper(time.Second*1))
+		}, NewStopper(time.Second*15))
 	}()
 
 	var kill bool
