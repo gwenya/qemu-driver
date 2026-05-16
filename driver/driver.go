@@ -168,6 +168,7 @@ func (d *driver) startWatcher(done chan struct{}) {
 }
 
 func (d *driver) handleQemuEvent(event doQmp.Event) {
+	d.logger.Logf("qemu event: %T(%+v)", event, event)
 	switch event.Event {
 	case "SHUTDOWN":
 		guest := false
@@ -185,6 +186,7 @@ func (d *driver) handleQemuEvent(event doQmp.Event) {
 }
 
 func (d *driver) onQemuProcessExit() {
+	d.logger.Logf("qemu process exited")
 	d.events.Publish(ProcessExitEvent{})
 }
 
@@ -667,7 +669,10 @@ func (d *driver) Stop() error {
 	} else {
 		stopEvent := <-stopEventCh
 		if stopEvent == nil {
+			d.logger.Logf("failed to stop VM, killing it")
 			kill = true
+		} else {
+			d.logger.Logf("VM stopped, waiting for process exit")
 		}
 	}
 
