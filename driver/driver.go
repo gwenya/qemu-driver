@@ -185,7 +185,7 @@ func (d *driver) handleQemuEvent(event doQmp.Event) {
 }
 
 func (d *driver) onQemuProcessExit() {
-	d.logger.Logf("qemu process stopped")
+	d.events.Publish(ProcessExitEvent{})
 }
 
 func (d *driver) storagePath(name StorageFilename) string {
@@ -586,6 +586,50 @@ func (d *driver) resizeRootdisk(size uint64) error {
 	return nil
 }
 
+type Stopper struct {
+	stopChan chan struct{}
+	C        chan struct{}
+}
+
+func NewStopper(timeout time.Duration) *Stopper {
+	stopper := &Stopper{
+		stopChan: make(chan struct{}),
+		C:        make(chan struct{}),
+	}
+
+	go func() {
+		select {
+		case <-time.NewTimer(timeout).C:
+		case <-stopper.stopChan:
+		}
+
+		close(stopper.C)
+	}()
+
+	return stopper
+}
+
+func (s *Stopper) Stop() {
+	close(s.stopChan)
+}
+
+func (d *driver) waitForEvent(predicate func(Event) bool, stopper *Stopper) Event {
+	events := make(chan Event)
+	d.events.Subscribe(events)
+	defer d.events.Unsubscribe(events)
+
+	for {
+		select {
+		case evt := <-events:
+			if predicate(evt) {
+				return evt
+			}
+		case <-stopper.C:
+			return nil
+		}
+	}
+}
+
 func (d *driver) Stop() error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -594,26 +638,23 @@ func (d *driver) Stop() error {
 		return err
 	}
 
-	events := make(chan Event)
-	stopped := make(chan bool)
-
-	d.events.Subscribe(events)
+	stopper := NewStopper(time.Second * 1)
+	stopEventCh := make(chan Event)
 
 	go func() {
-		defer d.events.Unsubscribe(events)
-		timer := time.NewTimer(time.Second * 1)
-		for {
-			select {
-			case evt := <-events:
-				if _, ok := evt.(StoppedEvent); ok {
-					stopped <- true
-					return
-				}
-			case <-timer.C:
-				stopped <- false
-				return
-			}
-		}
+		stopEventCh <- d.waitForEvent(func(e Event) bool {
+			_, ok := e.(StoppedEvent)
+			return ok
+		}, stopper)
+	}()
+
+	exitEventCh := make(chan Event)
+
+	go func() {
+		exitEventCh <- d.waitForEvent(func(e Event) bool {
+			_, ok := e.(ProcessExitEvent)
+			return ok
+		}, NewStopper(time.Second*1))
 	}()
 
 	var kill bool
@@ -622,8 +663,12 @@ func (d *driver) Stop() error {
 	if err != nil {
 		d.logger.Logf("failed to stop VM, killing it: %v", err)
 		kill = true
+		stopper.Stop()
 	} else {
-		kill = !<-stopped
+		stopEvent := <-stopEventCh
+		if stopEvent == nil {
+			kill = true
+		}
 	}
 
 	if kill {
@@ -639,6 +684,11 @@ func (d *driver) Stop() error {
 	}
 
 	d.mon = nil
+
+	exitEvt := <-exitEventCh
+	if exitEvt == nil {
+		return fmt.Errorf("qemu process did not exit")
+	}
 
 	return nil
 }

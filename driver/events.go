@@ -10,6 +10,8 @@ type StoppedEvent struct {
 	Guest bool
 }
 
+type ProcessExitEvent struct{}
+
 type RestartedEvent struct {
 	Guest bool
 }
@@ -29,6 +31,8 @@ func (e StoppedEvent) String() string {
 }
 
 func (StoppedEvent) __isEvent() {}
+
+func (ProcessExitEvent) __isEvent() {}
 
 func (e RestartedEvent) String() string {
 	if e.Guest {
