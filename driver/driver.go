@@ -147,6 +147,10 @@ func (d *driver) startWatcher(done chan struct{}) {
 			}
 		}
 
+		if ctx.Err() == nil {
+			d.onQemuProcessExit()
+		}
+
 		d.mu.Lock()
 		defer d.mu.Unlock()
 
@@ -159,10 +163,6 @@ func (d *driver) startWatcher(done chan struct{}) {
 
 		d.mon = nil
 		d.cancelWatcher = nil
-
-		if ctx.Err() == nil {
-			d.onQemuProcessExit()
-		}
 	}()
 
 }
