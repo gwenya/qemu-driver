@@ -615,9 +615,10 @@ func (s *Stopper) Stop() {
 	close(s.stopChan)
 }
 
-func (d *driver) waitForEvent(predicate func(Event) bool, stopper *Stopper) Event {
+func (d *driver) waitForEvent(predicate func(Event) bool, stopper *Stopper, wg *sync.WaitGroup) Event {
 	events := make(chan Event)
 	d.events.Subscribe(events)
+	wg.Done()
 	defer d.events.Unsubscribe(events)
 
 	for {
@@ -635,19 +636,25 @@ func (d *driver) waitForEvent(predicate func(Event) bool, stopper *Stopper) Even
 func (d *driver) Stop() error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+
 	mon, err := d.connectMonitor()
 	if err != nil {
 		return err
 	}
 
+	// set up handlers
 	stopper := NewStopper(time.Second * 15)
 	stopEventCh := make(chan Event)
 
+	wg := sync.WaitGroup{}
+	wg.Add(2)
+
 	go func() {
 		stopEventCh <- d.waitForEvent(func(e Event) bool {
-			_, ok := e.(StoppedEvent)
-			return ok
-		}, stopper)
+			_, isStopped := e.(StoppedEvent)
+			_, isExited := e.(ProcessExitEvent)
+			return isStopped || isExited
+		}, stopper, &wg)
 	}()
 
 	exitEventCh := make(chan Event)
@@ -656,10 +663,23 @@ func (d *driver) Stop() error {
 		exitEventCh <- d.waitForEvent(func(e Event) bool {
 			_, ok := e.(ProcessExitEvent)
 			return ok
-		}, NewStopper(time.Second*15))
+		}, NewStopper(time.Second*15), &wg)
 	}()
 
-	var kill bool
+	wg.Wait()
+
+	// handle status
+	status := d.getStatus()
+
+	if status == Stopped {
+		return nil
+	} else if status != Running {
+		return fmt.Errorf("cannot stop VM because it is in state %s", status)
+	}
+
+	// trigger stop
+	kill := false
+	exited := false
 
 	err = mon.Quit()
 	if err != nil {
@@ -671,11 +691,15 @@ func (d *driver) Stop() error {
 		if stopEvent == nil {
 			d.logger.Logf("failed to stop VM, killing it")
 			kill = true
+		} else if _, ok := stopEvent.(ProcessExitEvent); ok {
+			d.logger.Logf("VM process is already exited")
+			exited = true
 		} else {
 			d.logger.Logf("VM stopped, waiting for process exit")
 		}
 	}
 
+	// handle kill
 	if kill {
 		err := d.executionStrategy.Kill()
 		if err != nil {
@@ -683,6 +707,7 @@ func (d *driver) Stop() error {
 		}
 	}
 
+	// clean up
 	err = d.mon.Disconnect()
 	if err != nil {
 		d.logger.Logf("failed to close qmp: %v", err)
@@ -690,9 +715,11 @@ func (d *driver) Stop() error {
 
 	d.mon = nil
 
-	exitEvt := <-exitEventCh
-	if exitEvt == nil {
-		return fmt.Errorf("qemu process did not exit")
+	if !exited {
+		exitEvt := <-exitEventCh
+		if exitEvt == nil {
+			return fmt.Errorf("qemu process did not exit")
+		}
 	}
 
 	return nil
