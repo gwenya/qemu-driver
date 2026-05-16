@@ -62,7 +62,7 @@ runcmd:
 	go func() {
 		for {
 			e := <-events
-			fmt.Printf("EVENT: %s\n", e)
+			fmt.Printf("EVENT: %T%+v\n", e, e)
 		}
 	}()
 

@@ -130,7 +130,7 @@ func (d *driver) startWatcher(done chan struct{}) {
 				break loop
 			case event := <-events:
 				if event.Event == "" {
-					break loop // TODO: reconnect monitor?
+					continue // TODO: reconnect monitor?
 				}
 
 				if event.Event == "RESET" {
@@ -168,7 +168,7 @@ func (d *driver) startWatcher(done chan struct{}) {
 }
 
 func (d *driver) handleQemuEvent(event doQmp.Event) {
-	d.logger.Logf("qemu event: %T(%+v)", event, event)
+	d.logger.Logf("qemu event: %T%+v", event, event)
 	switch event.Event {
 	case "SHUTDOWN":
 		guest := false

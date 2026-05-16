@@ -127,7 +127,20 @@ func (m *monitor) runCommandWithResponse(command string, args map[string]any, re
 
 func (m *monitor) Events() <-chan qmp.Event {
 	events, _ := m.q.Events(context.Background())
-	return events
+
+	events2 := make(chan qmp.Event)
+
+	go func() {
+		for {
+			e := <-events
+			events2 <- e
+			if e.Event == "" {
+				return
+			}
+		}
+	}()
+
+	return events2
 }
 
 func (m *monitor) AddDevice(device map[string]any) error {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sync"
 
 	sd "github.com/coreos/go-systemd/v22/dbus"
 	"github.com/godbus/dbus/v5"
@@ -23,6 +24,7 @@ type systemdStrategy struct {
 	logger         Logger
 	chIn           chan struct{}
 	chOut          chan struct{}
+	mu             sync.Mutex
 }
 
 type SystemdOptions struct {
@@ -174,12 +176,17 @@ func (s *systemdStrategy) Start(cmd []string, fds []*os.File) (chan struct{}, er
 	s.chOut = make(chan struct{})
 	go s.watch()
 
+	s.mu.Lock()
 	s.unitName = unitName
+	s.mu.Unlock()
 
 	return s.chOut, nil
 }
 
 func (s *systemdStrategy) IsRunning() (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	return s.unitName != "", nil
 }
 
@@ -212,6 +219,10 @@ func (s *systemdStrategy) Close() error {
 
 func (s *systemdStrategy) watch() {
 	<-s.chIn
+
+	s.mu.Lock()
 	s.unitName = ""
+	s.mu.Unlock()
+
 	close(s.chOut)
 }
