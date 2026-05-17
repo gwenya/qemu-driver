@@ -1,7 +1,9 @@
 package pcie
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"net"
 	"os"
 	"strings"
@@ -68,8 +70,22 @@ func (d *tapNetworkDevice) Plug(m qmp.Monitor, alloc BusAllocation) (errRet erro
 		}
 	}()
 
+	tapPath := "/dev/net/tun"
+
+	_, err = os.Stat(fmt.Sprintf("/sys/class/net/%s/macvtap", d.netdevName))
+	if err == nil {
+		ifIndexStr, err := os.ReadFile(fmt.Sprintf("/sys/class/net/%s/ifindex", d.netdevName))
+		if err != nil {
+			return fmt.Errorf("getting link index for %q: %w", d.netdevName, err)
+		}
+
+		tapPath = fmt.Sprintf("/dev/tap%s", strings.TrimSpace(string(ifIndexStr)))
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("checking if network interface %q is macvtap: %w", d.netdevName, err)
+	}
+
 	for i := range queueCount {
-		fd, err := openTap(d.netdevName)
+		fd, err := openTap(tapPath, d.netdevName)
 		if err != nil {
 			return fmt.Errorf("opening tap for queue %d: %w", i, err)
 		}
@@ -135,8 +151,8 @@ func (d *tapNetworkDevice) Plug(m qmp.Monitor, alloc BusAllocation) (errRet erro
 	return nil
 }
 
-func openTap(name string) (f *os.File, retErr error) {
-	fd, err := os.OpenFile("/dev/net/tun", os.O_RDWR, 0)
+func openTap(tapPath string, name string) (f *os.File, retErr error) {
+	fd, err := os.OpenFile(tapPath, os.O_RDWR, 0)
 	if err != nil {
 		return nil, fmt.Errorf("opening /dev/net/tun: %w", err)
 	}
