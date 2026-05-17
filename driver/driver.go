@@ -401,6 +401,7 @@ func (d *driver) Start(opts StartOptions) error {
 
 	doneCh, err := d.executionStrategy.Start(builder.GetCommand(), builder.GetFds())
 	if err != nil {
+		_ = d.executionStrategy.Kill()
 		return fmt.Errorf("starting qemu: %w", err)
 	}
 
@@ -408,6 +409,7 @@ func (d *driver) Start(opts StartOptions) error {
 
 	mon, err := d.connectMonitor()
 	if err != nil {
+		_ = d.executionStrategy.Kill()
 		return err
 	}
 
@@ -423,11 +425,13 @@ func (d *driver) Start(opts StartOptions) error {
 	}
 
 	if hotplugErrors != nil {
+		_ = d.executionStrategy.Kill()
 		return fmt.Errorf("hotplugging: %w", errors.Join(hotplugErrors...))
 	}
 
 	err = mon.Continue()
 	if err != nil {
+		_ = d.executionStrategy.Kill()
 		return fmt.Errorf("starting VM execution: %w", err)
 	}
 
