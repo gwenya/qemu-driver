@@ -121,6 +121,7 @@ func (w *waiter) handleSignal(ctx context.Context, signal *dbus.Signal) {
 	defer w.mu.Unlock()
 
 	ch, ok := w.unitMap[unitName]
+	delete(w.unitMap, unitName)
 	close(ch)
 }
 
