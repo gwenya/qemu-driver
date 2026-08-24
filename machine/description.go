@@ -17,6 +17,7 @@ type Description struct {
 	chardevs       []chardev.Chardev
 	firmwarePath   string
 	nvramPath      string
+	smbiosEntries  []smbiosEntry
 }
 
 func (d *Description) Firmware(firmwarePath string, nvramPath string) {

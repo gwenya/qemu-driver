@@ -1,5 +1,7 @@
 package driver
 
+import "github.com/gwenya/qemu-driver/machine"
+
 type StartOptions struct {
 	CpuCount        uint32
 	MemorySize      uint64
@@ -9,4 +11,7 @@ type StartOptions struct {
 	Volumes         []Volume
 	NetworkAdapters []NetworkAdapter
 	VsockCid        uint32
+	SystemInfo      *machine.SystemInfo
+	ChassisInfo     *machine.ChassisInfo
+	OemStrings      []string
 }

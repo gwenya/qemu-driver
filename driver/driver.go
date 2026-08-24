@@ -347,6 +347,18 @@ func (d *driver) Start(opts StartOptions) error {
 
 	desc.AddChardev(chardev.NewHub("console", "console-ringbuf", "console-socket"))
 
+	if opts.SystemInfo != nil {
+		desc.AddSystemInfo(*opts.SystemInfo)
+	}
+
+	if opts.ChassisInfo != nil {
+		desc.AddChassisInfo(*opts.ChassisInfo)
+	}
+
+	for _, oemString := range opts.OemStrings {
+		desc.AddOemString(oemString)
+	}
+
 	desc.Scsi().AddDisk(storage.NewImageDrive(diskIdRootdisk().toStorage(), d.storagePath(RootDiskFileName), opts.ReadonlyDisk))
 
 	if (opts.CloudInit != CloudInit{}) {
@@ -388,6 +400,8 @@ func (d *driver) Start(opts StartOptions) error {
 	}
 
 	config, hotplugDevices := desc.BuildConfig()
+
+	builder.AddArgs(desc.SmbiosArgs()...)
 
 	configFile, err := os.Create(configFilePath)
 	if err != nil {
