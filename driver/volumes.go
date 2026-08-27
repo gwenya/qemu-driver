@@ -23,3 +23,18 @@ func NewCephVolume(id DiskIdentifier, pool string, name string) Volume {
 		},
 	}
 }
+
+type fileVolumeOpts struct {
+	path     string
+	readonly bool
+}
+
+func NewFileVolume(id DiskIdentifier, path string, readonly bool) Volume {
+	return Volume{
+		id: id,
+		options: fileVolumeOpts{
+			path:     path,
+			readonly: readonly,
+		},
+	}
+}

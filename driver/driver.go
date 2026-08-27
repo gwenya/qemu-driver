@@ -375,6 +375,8 @@ func (d *driver) Start(opts StartOptions) error {
 		case cephVolumeOpts:
 			// TODO: pass vendor and model, and more rbd options
 			desc.Scsi().AddDisk(storage.NewRbdDrive(volume.id.toStorage(), opts.pool, opts.name))
+		case fileVolumeOpts:
+			desc.Scsi().AddDisk(storage.NewImageDrive(volume.id.toStorage(), opts.path, opts.readonly))
 		default:
 			panic("not implemented")
 		}
@@ -600,7 +602,7 @@ func (d *driver) resizeRootdisk(size uint64) error {
 
 	err = util.RunCmd("qemu-img", "resize", "-f", "raw", d.storagePath(RootDiskFileName), fmt.Sprintf("%dK", sizeKiB))
 	if err != nil {
-		return fmt.Errorf("resizing image: %w", sizeKiB, err)
+		return fmt.Errorf("resizing image to %dK: %w", sizeKiB, err)
 	}
 
 	return nil
@@ -1122,6 +1124,8 @@ func (d *driver) AttachVolume(volume Volume) error {
 	switch opts := volume.options.(type) {
 	case cephVolumeOpts:
 		device = storage.NewRbdDrive(volume.id.toStorage(), opts.pool, opts.name)
+	case fileVolumeOpts:
+		device = storage.NewImageDrive(volume.id.toStorage(), opts.path, opts.readonly)
 	default:
 		return errors.New("unsupported volume type")
 	}
