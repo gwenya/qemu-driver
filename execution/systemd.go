@@ -9,6 +9,7 @@ import (
 	sd "github.com/coreos/go-systemd/v22/dbus"
 	"github.com/godbus/dbus/v5"
 	"github.com/google/uuid"
+
 	"github.com/gwenya/qemu-driver/systemd"
 )
 
@@ -128,7 +129,7 @@ type ExtraFd struct {
 func (s *systemdStrategy) Start(cmd []string, fds []*os.File) (chan struct{}, error) {
 	unitName := fmt.Sprintf("%s%s.service", s.unitNamePrefix, uuid.New())
 
-	err := os.WriteFile(s.unitNameFile, []byte(unitName), 0644)
+	err := os.WriteFile(s.unitNameFile, []byte(unitName), 0o644)
 	if err != nil {
 		return nil, fmt.Errorf("writing unit name file: %w", err)
 	}
@@ -144,7 +145,7 @@ func (s *systemdStrategy) Start(cmd []string, fds []*os.File) (chan struct{}, er
 	ch := make(chan string)
 
 	props := []sd.Property{
-		sd.PropDescription(fmt.Sprintf("Beanstack VM instance <TODO>")),
+		sd.PropDescription("Beanstack VM instance <TODO>"),
 		sd.PropExecStart(cmd, false),
 		{
 			Name:  "ExtraFileDescriptors",

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
 	"github.com/gwenya/qemu-driver/driver"
 )
 
@@ -17,7 +18,6 @@ func (l *logger) Logf(format string, v ...interface{}) {
 }
 
 func main() {
-
 	id := uuid.MustParse("804859f4-343b-4a0f-97b1-75d04aee531d")
 
 	storagePath := path.Join("/tmp", id.String())
@@ -72,20 +72,17 @@ runcmd:
 		driver.WithRuntimeDirectory(storagePath),
 		driver.WithQemuPath("/usr/bin/qemu-system-x86_64"),
 		driver.WithLogger(&logger{}),
-		//driver.WithSystemdStrategy(driver.SystemdStrategyOptions{UnitNamePrefix: "qemu-"}, nil),
+		// driver.WithSystemdStrategy(driver.SystemdStrategyOptions{UnitNamePrefix: "qemu-"}, nil),
 		driver.WithForkStrategy(nil),
 		driver.WithEventChannel(events),
 	)
-
 	//	FirmwareSourcePath: firmwareSource,
 	//	NvramSourcePath:    nvramSource,
-
 	if err != nil {
 		panic(err)
 	}
 
-	//goland:noinspection GoUnhandledErrorResult
-	defer d.Close()
+	defer func() { _ = d.Close() }()
 
 	if d.GetStatus() == driver.Uninitialized {
 		err = d.Create(driver.CreateOptions{
@@ -119,5 +116,4 @@ runcmd:
 	if err != nil {
 		panic(err)
 	}
-
 }

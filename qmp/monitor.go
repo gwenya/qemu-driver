@@ -333,7 +333,6 @@ func (m *monitor) SendFd(name string, fd *os.File) error {
 	err := m.runCommandWithFd("getfd", map[string]any{
 		"fdname": name,
 	}, fd)
-
 	if err != nil {
 		return err
 	}
@@ -345,7 +344,6 @@ func (m *monitor) CloseFd(name string) error {
 	err := m.runCommand("closefd", map[string]any{
 		"fdname": name,
 	})
-
 	if err != nil {
 		return err
 	}

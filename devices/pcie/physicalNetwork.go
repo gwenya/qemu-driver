@@ -28,11 +28,11 @@ func (d *physicalNetworkDevice) GetHotplugs(alloc BusAllocation) []devices.Hotpl
 }
 
 func (d *physicalNetworkDevice) Plug(m qmp.Monitor, alloc BusAllocation) error {
-	//TODO implement me
+	// TODO implement me
 	panic("implement me")
 }
 
 func (d *physicalNetworkDevice) Unplug(m qmp.Monitor, alloc BusAllocation) error {
-	//TODO implement me
+	// TODO implement me
 	panic("implement me")
 }

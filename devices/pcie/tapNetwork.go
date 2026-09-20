@@ -8,10 +8,11 @@ import (
 	"os"
 	"strings"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/gwenya/qemu-driver/config"
 	"github.com/gwenya/qemu-driver/devices"
 	"github.com/gwenya/qemu-driver/qmp"
-	"golang.org/x/sys/unix"
 )
 
 type tapNetworkDevice struct {
@@ -179,7 +180,7 @@ func openTap(tapPath string, name string) (f *os.File, retErr error) {
 }
 
 func (d *tapNetworkDevice) Unplug(m qmp.Monitor, alloc BusAllocation) error {
-	//TODO implement me
+	// TODO implement me
 	panic("implement me")
 }
 

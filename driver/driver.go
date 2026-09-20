@@ -19,6 +19,8 @@ import (
 	"codeberg.org/gwenya/go-fanout"
 	doQmp "github.com/digitalocean/go-qemu/qmp"
 	"github.com/google/uuid"
+	"github.com/kdomanski/iso9660"
+
 	"github.com/gwenya/qemu-driver/cmdBuilder"
 	"github.com/gwenya/qemu-driver/devices/chardev"
 	"github.com/gwenya/qemu-driver/devices/pcie"
@@ -27,7 +29,6 @@ import (
 	"github.com/gwenya/qemu-driver/machine"
 	"github.com/gwenya/qemu-driver/qmp"
 	"github.com/gwenya/qemu-driver/util"
-	"github.com/kdomanski/iso9660"
 )
 
 type Driver interface {
@@ -137,7 +138,7 @@ func (d *driver) startWatcher(done chan struct{}) {
 				}
 
 				if event.Event == "RESET" {
-					if (lastReset == time.Time{}) {
+					if lastReset.Equal(time.Time{}) {
 						lastReset = time.Now()
 					} else if time.Now().Before(lastReset.Add(time.Millisecond * 100)) {
 						// qemu always sends two RESET events, ignore the second one
@@ -167,7 +168,6 @@ func (d *driver) startWatcher(done chan struct{}) {
 		d.mon = nil
 		d.cancelWatcher = nil
 	}()
-
 }
 
 func (d *driver) handleQemuEvent(event doQmp.Event) {
@@ -476,11 +476,11 @@ func (d *driver) makeUnixListener(path string) (*os.File, error) {
 		return nil, fmt.Errorf("creating listener: %w", err)
 	}
 
-	defer listener.Close()
+	defer func() { _ = listener.Close() }()
 
 	listener.SetUnlinkOnClose(false)
 
-	err = os.Chmod(path, 0777)
+	err = os.Chmod(path, 0o777)
 	if err != nil {
 		return nil, fmt.Errorf("changing permissions on socket path: %w", err)
 	}
@@ -569,7 +569,7 @@ func (d *driver) generateCloudInitIso(cidata CloudInit) error {
 		}
 	}
 
-	isoFile, err := os.OpenFile(d.storagePath(CloudInitIsoFile), os.O_WRONLY|os.O_TRUNC|os.O_CREATE, 0600)
+	isoFile, err := os.OpenFile(d.storagePath(CloudInitIsoFile), os.O_WRONLY|os.O_TRUNC|os.O_CREATE, 0o600)
 	if err != nil {
 		log.Fatalf("failed to create file: %s", err)
 	}
@@ -585,13 +585,12 @@ func (d *driver) generateCloudInitIso(cidata CloudInit) error {
 		return fmt.Errorf("writing iso file: %w", err)
 	}
 
-	err = os.WriteFile(hashFilePath, []byte(hash), 0600)
+	err = os.WriteFile(hashFilePath, []byte(hash), 0o600)
 	if err != nil {
 		return fmt.Errorf("writing cloud init hash file: %w", err)
 	}
 
 	return nil
-
 }
 
 func (d *driver) resizeRootdisk(size uint64) error {
@@ -760,7 +759,7 @@ func (d *driver) Stop() error {
 }
 
 func (d *driver) Reboot() error {
-	//TODO implement me
+	// TODO implement me
 	panic("implement me")
 }
 
@@ -874,7 +873,7 @@ func (d *driver) SetCPUs(count uint32) error {
 	}
 
 	if needed > available {
-		return newRestartRequiredErr(fmt.Sprintf("not enough CPU hotplug slots"))
+		return newRestartRequiredErr("not enough CPU hotplug slots")
 	}
 
 	slices.SortFunc(availableCPUs, func(a, b qmp.HotpluggableCpu) int {
@@ -969,7 +968,6 @@ func (d *driver) SetMemory(bytes uint64) error {
 		"memdev": memId,
 		"id":     deviceId,
 	})
-
 	if err != nil {
 		err2 := mon.RemoveMemoryBackend(memId)
 		if err2 != nil {
@@ -1112,17 +1110,18 @@ func (d *driver) GetVolumeIdentifiers() ([]DiskIdentifier, error) {
 		var ok bool
 
 		for _, property := range volume.Properties {
-			if property.Name == "vendor" {
+			switch property.Name {
+			case "vendor":
 				vendor, ok = property.Value.(string)
 				if !ok {
 					return nil, fmt.Errorf("unexpected response from qemu, expected string, got %v", property.Value)
 				}
-			} else if property.Name == "product" {
+			case "product":
 				product, ok = property.Value.(string)
 				if !ok {
 					return nil, fmt.Errorf("unexpected response from qemu, expected string, got %v", property.Value)
 				}
-			} else if property.Name == "serial" {
+			case "serial":
 				serial, ok = property.Value.(string)
 				if !ok {
 					return nil, fmt.Errorf("unexpected response from qemu, expected string, got %v", property.Value)

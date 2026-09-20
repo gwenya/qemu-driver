@@ -42,6 +42,9 @@ func NewWaiter() (Waiter, error) {
 		Events: syscall.EPOLLIN,
 		Fd:     int32(efd),
 	})
+	if err != nil {
+		return nil, fmt.Errorf("epoll_ctl: %w", err)
+	}
 
 	ep := &waiter{
 		epollFd:  epfd,

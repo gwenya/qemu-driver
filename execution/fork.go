@@ -10,8 +10,9 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/gwenya/qemu-driver/pidfd"
 	"golang.org/x/sys/unix"
+
+	"github.com/gwenya/qemu-driver/pidfd"
 )
 
 type forkStrategy struct {
@@ -135,8 +136,7 @@ func (s *forkStrategy) Start(cmdWithArgs []string, fds []*os.File) (chan struct{
 			return nil, fmt.Errorf("creating stdout log file: %w", err)
 		}
 
-		//goland:noinspection GoUnhandledErrorResult
-		defer stdout.Close()
+		defer func() { _ = stdout.Close() }()
 	}
 
 	if s.stderrFile != "" {
@@ -148,8 +148,7 @@ func (s *forkStrategy) Start(cmdWithArgs []string, fds []*os.File) (chan struct{
 				return nil, fmt.Errorf("creating stderr log file: %w", err)
 			}
 
-			//goland:noinspection GoUnhandledErrorResult
-			defer stderr.Close()
+			defer func() { _ = stderr.Close() }()
 		}
 	}
 
