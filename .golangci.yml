@@ -1,0 +1,16 @@
+version: "2"
+
+linters:
+  # standard is errcheck, govet, ineffassign, staticcheck and unused.
+  # the opinionated ones (revive, gocritic, errorlint, gosec, wsl) go on
+  # after the refactor, when the code is moving anyway and churn is cheap.
+  default: standard
+
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/gwenya/qemu-driver
