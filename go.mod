@@ -1,6 +1,6 @@
 module github.com/gwenya/qemu-driver
 
-go 1.25.4
+go 1.27.1
 
 require (
 	codeberg.org/gwenya/go-fanout v0.1.0
