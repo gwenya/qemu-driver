@@ -10,7 +10,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/kdomanski/iso9660 v0.4.0
 	github.com/urfave/cli/v3 v3.9.0
-	golang.org/x/sys v0.44.0
+	golang.org/x/sys v0.48.0
 )
 
 require github.com/digitalocean/go-libvirt v0.0.0-20220804181439-8648fbde413e // indirect
