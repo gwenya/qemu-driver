@@ -1,0 +1,39 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # the go version comes from go.mod, so it lives in one place
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - uses: extractions/setup-just@v4
+
+      - name: read the pinned golangci-lint version
+        id: golangci
+        run: echo "version=v$(cat .golangci-version)" >> "$GITHUB_OUTPUT"
+
+      # install only, `just lint` runs it, so ci and a local run are the
+      # same command and a ci failure reproduces with one word
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: ${{ steps.golangci.outputs.version }}
+          install-only: true
+
+      - run: just ci
