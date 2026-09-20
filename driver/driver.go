@@ -37,6 +37,8 @@ type Driver interface {
 	Reboot() error
 	GetStatus() Status
 
+	GetVsockCid() uint32
+
 	GetCPUs() (uint32, error)
 	SetCPUs(count uint32) error
 
@@ -67,6 +69,7 @@ type driver struct {
 	mon           qmp.Monitor
 	cancelWatcher context.CancelFunc
 	events        fanout.Fanout[Event]
+	vsockCid      uint32
 }
 
 func New(opts ...Option) (Driver, error) {
@@ -391,14 +394,25 @@ func (d *driver) Start(opts StartOptions) error {
 		}
 	}
 
+	d.vsockCid = 0
+
 	if opts.VsockCid != 0 {
-		vsockFile, err := openVsock(opts.VsockCid)
-		if err != nil {
-			return fmt.Errorf("allocating vsock cid %d: %w", opts.VsockCid, err)
+		var vsockFile *os.File
+
+		cid := opts.VsockCid
+		if cid == AnyVsockCid {
+			vsockFile, cid, err = openFreeVsock()
+		} else {
+			vsockFile, err = openVsock(cid)
 		}
 
+		if err != nil {
+			return fmt.Errorf("allocating vsock cid: %w", err)
+		}
+
+		d.vsockCid = cid
 		vsockFd := builder.AddFd(vsockFile)
-		desc.Pcie().AddDevice(pcie.NewVsock("vsock", opts.VsockCid, vsockFd))
+		desc.Pcie().AddDevice(pcie.NewVsock("vsock", cid, vsockFd))
 	}
 
 	config, hotplugDevices := desc.BuildConfig()
@@ -800,6 +814,15 @@ func (d *driver) GetStatus() Status {
 	defer d.mu.Unlock()
 
 	return d.getStatus()
+}
+
+// GetVsockCid is the cid the running VM was started with, or 0 if it has no
+// vsock device.
+func (d *driver) GetVsockCid() uint32 {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	return d.vsockCid
 }
 
 func (d *driver) GetCPUs() (uint32, error) {

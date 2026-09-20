@@ -10,8 +10,10 @@ type StartOptions struct {
 	CloudInit       CloudInit
 	Volumes         []Volume
 	NetworkAdapters []NetworkAdapter
-	VsockCid        uint32
-	SystemInfo      *machine.SystemInfo
-	ChassisInfo     *machine.ChassisInfo
-	OemStrings      []string
+	// VsockCid is the cid the guest gets, 0 for no vsock device at all and
+	// AnyVsockCid for a cid no other VM on the host holds
+	VsockCid    uint32
+	SystemInfo  *machine.SystemInfo
+	ChassisInfo *machine.ChassisInfo
+	OemStrings  []string
 }
