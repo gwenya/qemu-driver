@@ -64,7 +64,6 @@ func (d *rbdDrive) Plug(m qmp.Monitor, bus string) error {
 			"node-name": d.id.NodeName(),
 			"read-only": false,
 		})
-
 		if err != nil {
 			return fmt.Errorf("adding block device: %w", err)
 		}
@@ -93,7 +92,6 @@ func (d *rbdDrive) Plug(m qmp.Monitor, bus string) error {
 			"bus":     bus,
 			"driver":  "scsi-hd",
 		})
-
 		if err != nil {
 			return fmt.Errorf("adding device: %w", err)
 		}
@@ -103,7 +101,7 @@ func (d *rbdDrive) Plug(m qmp.Monitor, bus string) error {
 }
 
 func (d *rbdDrive) Unplug(m qmp.Monitor, bus string) error {
-	//TODO implement me
+	// TODO implement me
 	panic("implement me")
 }
 

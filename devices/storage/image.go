@@ -77,7 +77,6 @@ func (d *imageDrive) Plug(m qmp.Monitor, bus string) error {
 		"locking":   "off",
 		"filename":  d.path,
 	})
-
 	if err != nil {
 		return fmt.Errorf("adding block device: %w", err)
 	}
@@ -93,7 +92,6 @@ func (d *imageDrive) Plug(m qmp.Monitor, bus string) error {
 		"bus":     bus,
 		"driver":  driver,
 	})
-
 	if err != nil {
 		return fmt.Errorf("adding device: %w", err)
 	}

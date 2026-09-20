@@ -1,7 +1,9 @@
 package driver
 
-type StorageFilename string
-type RuntimeFilename string
+type (
+	StorageFilename string
+	RuntimeFilename string
+)
 
 const (
 	RootDiskFileName    StorageFilename = "rootdisk.img"

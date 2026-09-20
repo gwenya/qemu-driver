@@ -5,22 +5,25 @@ import (
 	"os"
 )
 
-func CopyFile(src string, dst string) error {
+func CopyFile(src string, dst string) (err error) {
 	srcFile, err := os.Open(src)
 	if err != nil {
 		return err
 	}
 
-	//goland:noinspection GoUnhandledErrorResult
-	defer srcFile.Close()
+	defer func() { _ = srcFile.Close() }()
 
 	dstFile, err := os.Create(dst)
 	if err != nil {
 		return err
 	}
 
-	//goland:noinspection GoUnhandledErrorResult
-	defer dstFile.Close()
+	defer func() {
+		cerr := dstFile.Close()
+		if cerr != nil && err == nil {
+			err = cerr
+		}
+	}()
 
 	_, err = io.Copy(dstFile, srcFile)
 	if err != nil {

@@ -11,8 +11,7 @@ import (
 type serialBus struct {
 	devices.BusImpl[serial.BusDevice]
 	noHotPlug
-	id  string
-	rng string
+	id string
 }
 
 type SerialBus interface {
